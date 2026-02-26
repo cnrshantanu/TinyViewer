@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Xcode
+mac-app/*.xcodeproj/xcuserdata/
+mac-app/*.xcodeproj/project.xcworkspace/xcuserdata/
+mac-app/DerivedData/
+*.xcuserstate
+
+# Firebase credentials (never commit real keys)
+mac-app/Tiny\ Viewer/FirebaseConfig.swift
+
+# Web
+web-app/.firebase/
