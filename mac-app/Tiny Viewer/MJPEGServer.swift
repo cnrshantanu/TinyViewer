@@ -54,6 +54,7 @@ private let viewerHTML = """
 </head>
 <body>
   <img id="s" draggable="false">
+  <div id="dbg">–</div>
   <div id="qbar">
     <button class="qbtn active" id="qualityBtn" onclick="cycleQuality()">Med</button>
   </div>
@@ -74,27 +75,43 @@ private let viewerHTML = """
       return {x, y};
     }
 
+    // ── Debug overlay ─────────────────────────────────────────────────────────
+    const dbg = document.getElementById('dbg');
+    let frameN = 0, fpsTick = 0;
+    setInterval(() => {
+      dbg.textContent = '#' + frameN + '  ' + fpsTick + 'fps';
+      fpsTick = 0;
+    }, 1000);
+
     // ── WebSocket (events + video stream) ────────────────────────────────────
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let ws, wsReady = false;
+    let ws, wsReady = false, frameRequested = false;
     let prevFrameUrl = null;
+
+    function requestFrame() {
+      if (!wsReady || frameRequested) return;
+      frameRequested = true;
+      ws.send(JSON.stringify({type: 'frameReady'}));
+    }
+
+    // Safety net: guarantee ≥10fps — re-request if no frame within 100ms
+    setInterval(() => { if (!frameRequested) requestFrame(); }, 100);
+
     (function connectWS() {
       ws = new WebSocket(wsProto + '//' + location.host + '/ws');
       ws.binaryType = 'blob';
-      ws.onopen = () => {
-        wsReady = true;
-        ws.send(JSON.stringify({type: 'frameReady'}));  // request first frame
-      };
+      ws.onopen = () => { wsReady = true; requestFrame(); };
       ws.onmessage = e => {
-        if (!(e.data instanceof Blob)) return;  // ignore text messages from server
+        if (!(e.data instanceof Blob)) return;
+        frameRequested = false;
+        requestFrame();            // immediately ask for next frame — decouple from decode
+        frameN = frameN % 60 + 1; // rolling 1-60 counter
+        fpsTick++;
         if (prevFrameUrl) URL.revokeObjectURL(prevFrameUrl);
         prevFrameUrl = URL.createObjectURL(e.data);
         img.src = prevFrameUrl;
-        img.onload = img.onerror = () => {
-          if (wsReady) ws.send(JSON.stringify({type: 'frameReady'}));
-        };
       };
-      ws.onclose = () => { wsReady = false; setTimeout(connectWS, 1500); };
+      ws.onclose = () => { wsReady = false; frameRequested = false; setTimeout(connectWS, 1500); };
       ws.onerror = () => {};
     })();
 
