@@ -46,7 +46,6 @@ class FirebaseClient {
 
     private var heartbeatTimer: Timer?
     private let session = URLSession.shared
-    private var usedConnectTokens: Set<String> = []
 
     // MARK: - Session management
 
@@ -159,38 +158,29 @@ class FirebaseClient {
         }
     }
 
-    // MARK: - One-time connect token validation
+    // MARK: - Connect token validation
 
-    /// Reads the connectToken field from Firestore and verifies it matches.
-    /// Marks the token as used so it cannot be reused within this session.
-    func validateConnectToken(_ token: String) async -> Bool {
-        guard !token.isEmpty, !usedConnectTokens.contains(token) else { return false }
+    /// Verifies a Firebase ID token issued by the web app.
+    /// Uses identitytoolkit to confirm the token is valid and belongs to this Mac's owner.
+    /// No Firestore write or read needed — validates in one fast network call.
+    func validateConnectToken(_ idToken: String) async -> Bool {
+        guard !idToken.isEmpty, let ownerUID = uid else { return false }
         do {
-            let authToken = try await validToken()
-            guard let uid else { return false }
-
-            let url = URL(string: "https://firestore.googleapis.com/v1/projects/\(FirebaseConfig.projectID)/databases/(default)/documents/tunnels/\(uid)")!
-            var req = URLRequest(url: url)
-            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+            var req = URLRequest(url: URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=\(FirebaseConfig.webAPIKey)")!)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONSerialization.data(withJSONObject: ["idToken": idToken])
 
             let (data, response) = try await session.data(for: req)
             try checkHTTP(data: data, response: response)
 
-            guard let json    = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let fields  = json["fields"] as? [String: Any],
-                  let tokField = fields["connectToken"] as? [String: Any],
-                  let stored  = tokField["stringValue"] as? String,
-                  !stored.isEmpty, stored == token
+            guard let json     = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let users    = json["users"] as? [[String: Any]],
+                  let first    = users.first,
+                  let tokenUID = first["localId"] as? String,
+                  tokenUID == ownerUID
             else { return false }
 
-            // Check expiry if present
-            if let expField = fields["connectTokenExpiry"] as? [String: Any],
-               let expStr   = expField["stringValue"] as? String,
-               let expiry   = Double(expStr) {
-                guard Date().timeIntervalSince1970 * 1000 < expiry else { return false }
-            }
-
-            usedConnectTokens.insert(token) // single-use
             return true
         } catch {
             print("[Firebase] Token validation error: \(error)")

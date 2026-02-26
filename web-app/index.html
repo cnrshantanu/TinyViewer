@@ -312,8 +312,7 @@
            onAuthStateChanged }         from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
   import { getFirestore,
            doc,
-           onSnapshot,
-           updateDoc }                  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+           onSnapshot }                 from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
   // ─── ⚙️  Paste your Firebase project config here ──────────────────────
   const firebaseConfig = {
@@ -375,22 +374,20 @@
 
   // ── Connect ─────────────────────────────────────────────────────────────
   window.connectNow = async function() {
-    if (!currentTunnelURL || !currentUID) return;
+    const user = auth.currentUser;
+    if (!user || !currentTunnelURL) return;
     const btn = document.getElementById('connectBtn');
     btn.textContent = 'Connecting…';
     btn.disabled = true;
     try {
-      const token  = crypto.randomUUID();
-      const expiry = String(Date.now() + 5 * 60 * 1000); // 5-min window
-      await updateDoc(doc(db, 'tunnels', currentUID), {
-        connectToken: token,
-        connectTokenExpiry: expiry,
-      });
-      window.location.href = currentTunnelURL + '/?token=' + token;
+      // Get a fresh Firebase ID token — verified by the Mac without any
+      // Firestore write, so there's no round-trip delay before the redirect.
+      const idToken = await user.getIdToken();
+      window.location.href = currentTunnelURL + '/?token=' + encodeURIComponent(idToken);
     } catch (e) {
       btn.textContent = 'Connect →';
       btn.disabled = false;
-      console.error('Connect token write failed:', e);
+      console.error('Auth token error:', e);
     }
   };
 

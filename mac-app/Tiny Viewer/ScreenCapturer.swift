@@ -12,8 +12,8 @@ enum StreamQuality: String, CaseIterable {
     case high   = "High"
 
     var maxWidth:    Int    { switch self { case .low: 960;  case .medium: 1280; case .high: 1920 } }
-    var jpegQuality: Double { switch self { case .low: 0.35; case .medium: 0.6;  case .high: 0.8  } }
-    var fps:         Int32  { switch self { case .low: 8;    case .medium: 10;   case .high: 15   } }
+    var jpegQuality: Double { switch self { case .low: 0.35; case .medium: 0.55; case .high: 0.75 } }
+    var fps:         Int32  { switch self { case .low: 10;   case .medium: 20;   case .high: 30   } }
 }
 
 // MARK: - Screen Capturer
@@ -47,7 +47,7 @@ class ScreenCapturer: NSObject, SCStreamOutput {
                 config.width                 = max(1, Int(Double(display.width)  * scale))
                 config.height                = max(1, Int(Double(display.height) * scale))
                 config.minimumFrameInterval  = CMTime(value: 1, timescale: q.fps)
-                config.queueDepth            = 2
+                config.queueDepth            = 3
 
                 let filter = SCContentFilter(
                     display: display,

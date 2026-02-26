@@ -1,4 +1,5 @@
 import Darwin
+import IOKit.pwr_mgt
 import SwiftUI
 
 // MARK: - Local IP
@@ -42,6 +43,7 @@ class AppState {
     let localIP        = localIPAddress()
 
     private var permissionPollTask: Task<Void, Never>?
+    private var sleepAssertionID: IOPMAssertionID = 0
 
     // Sub-systems
     let capturer  = ScreenCapturer()
@@ -97,10 +99,39 @@ class AppState {
             return await self.firebase.validateConnectToken(token)
         }
         let srv = server
-        capturer.onFrame = { [weak srv] data in srv?.broadcastFrame(data) }
+        var idleSkip = 0
+        capturer.onFrame = { [weak srv] data in
+            guard let srv else { return }
+            // Adaptive FPS: when idle >3s, pass only every 4th frame (~25%)
+            if srv.isIdle {
+                idleSkip += 1
+                guard idleSkip % 4 == 0 else { return }
+            } else {
+                idleSkip = 0
+            }
+            srv.broadcastFrame(data)
+        }
         server.onClientCountChanged = { [weak self] count in
             DispatchQueue.main.async { self?.clientCount = count }
         }
+        server.onQualityChange = { [weak self] quality in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.capturer.quality = quality
+                if self.capturer.isCapturing {
+                    self.capturer.stop()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self.capturer.start()
+                    }
+                }
+            }
+        }
+        IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            "Tiny Viewer active session" as CFString,
+            &sleepAssertionID
+        )
         capturer.start()
         server.start()
 
@@ -117,6 +148,10 @@ class AppState {
     }
 
     func stopServer() {
+        if sleepAssertionID != 0 {
+            IOPMAssertionRelease(sleepAssertionID)
+            sleepAssertionID = 0
+        }
         firebase.stopHeartbeat()
         if isRunning {
             Task { await firebase.setOffline() }
@@ -178,7 +213,7 @@ struct ContentView: View {
                 DashboardView(state: state)
             }
         }
-        .frame(minWidth: 380, minHeight: 300)
+        .frame(width: 380)
         .onAppear { state.restoreSessionIfPossible() }
     }
 }
@@ -265,158 +300,141 @@ struct DashboardView: View {
             Divider()
 
             // ── Main content ───────────────────────────────────────────────
-            ScrollView {
-                VStack(spacing: 18) {
+            VStack(spacing: 18) {
 
-                    // Quality
-                    LabeledContent("Quality") {
-                        Picker("", selection: Binding(
-                            get: { state.capturer.quality },
-                            set: { state.capturer.quality = $0 }
-                        )) {
-                            ForEach(StreamQuality.allCases, id: \.self) {
-                                Text($0.rawValue).tag($0)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .disabled(state.isRunning)
-                        .frame(width: 180)
-                    }
+                // Name
+                LabeledContent("Name") {
+                    TextField("Computer name", text: Binding(
+                        get: { state.computerName },
+                        set: { state.computerName = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(state.isRunning)
+                    .frame(width: 180)
+                }
 
-                    // Name
-                    LabeledContent("Name") {
-                        TextField("Computer name", text: Binding(
-                            get: { state.computerName },
-                            set: { state.computerName = $0 }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(state.isRunning)
-                        .frame(width: 180)
-                    }
+                // PIN
+                LabeledContent("PIN") {
+                    SecureField("Leave blank to disable", text: Binding(
+                        get: { state.pin },
+                        set: { state.pin = $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(state.isRunning)
+                    .frame(width: 180)
+                }
 
-                    // PIN
-                    LabeledContent("PIN") {
-                        SecureField("Leave blank to disable", text: Binding(
-                            get: { state.pin },
-                            set: { state.pin = $0 }
-                        ))
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(state.isRunning)
-                        .frame(width: 180)
-                    }
+                Divider()
 
-                    Divider()
-
-                    // Status rows
-                    VStack(spacing: 8) {
-                        StatusRow(
-                            label: "Server",
-                            value: state.isRunning ? "\(state.localIP):8080" : "Stopped",
-                            color: state.isRunning ? .green : .gray
-                        )
-                        StatusRow(
-                            label: "Tunnel",
-                            value: state.tunnel.status.label,
-                            color: state.tunnel.status.isRunning ? .green :
-                                   (state.isRunning ? .orange : .gray)
-                        )
-                        StatusRow(
-                            label: "Firebase",
-                            value: state.firebase.syncStatus.label,
-                            color: state.firebase.syncStatus == .synced ? .green :
-                                   (state.firebase.syncStatus == .syncing ? .orange : .gray)
-                        )
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(state.capturer.isCapturing ? Color.green : (state.isRunning ? Color.orange : Color.gray))
-                                .frame(width: 8, height: 8)
-                            Text("Screen")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 55, alignment: .leading)
-                            Text(state.capturer.isCapturing ? "Capturing" :
-                                 (state.capturer.captureError != nil ? "Permission denied" : "Idle"))
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(1)
-                            Spacer()
-                            if state.isRunning && !state.capturer.isCapturing {
-                                Button("Open Settings") {
-                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.mini)
-                            }
-                        }
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(state.accessibilityGranted ? Color.green : Color.orange)
-                                .frame(width: 8, height: 8)
-                            Text("Control")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 55, alignment: .leading)
-                            Text(state.accessibilityGranted ? "Accessibility granted" : "Not granted")
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(1)
-                            Spacer()
-                            if !state.accessibilityGranted {
-                                Button("Open Settings") {
-                                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.mini)
-                            }
-                        }
-                    }
-
-                    // Public URL
-                    if let url = state.publicURL {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Public URL")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            HStack {
-                                Text(url)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Spacer(minLength: 4)
-                                Button {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(url, forType: .string)
-                                } label: {
-                                    Image(systemName: "doc.on.doc")
-                                }
-                                .buttonStyle(.plain)
-                                .help("Copy URL")
-                            }
-                            .padding(8)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                        }
-                    }
-
-                    // Client count
+                // Status rows
+                VStack(spacing: 8) {
+                    StatusRow(
+                        label: "Server",
+                        value: state.isRunning ? "\(state.localIP):8080" : "Stopped",
+                        color: state.isRunning ? .green : .gray
+                    )
+                    StatusRow(
+                        label: "Tunnel",
+                        value: state.tunnel.status.label,
+                        color: state.tunnel.status.isRunning ? .green :
+                               (state.isRunning ? .orange : .gray)
+                    )
+                    StatusRow(
+                        label: "Firebase",
+                        value: state.firebase.syncStatus.label,
+                        color: state.firebase.syncStatus == .synced ? .green :
+                               (state.firebase.syncStatus == .syncing ? .orange : .gray)
+                    )
                     HStack(spacing: 8) {
                         Circle()
-                            .fill(state.statusColor)
+                            .fill(state.capturer.isCapturing ? Color.green : (state.isRunning ? Color.orange : Color.gray))
                             .frame(width: 8, height: 8)
-                        Text(state.statusText)
+                        Text("Screen")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .frame(width: 55, alignment: .leading)
+                        Text(state.capturer.isCapturing ? "Capturing" :
+                             (state.capturer.captureError != nil ? "Permission denied" : "Idle"))
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1)
+                        Spacer()
+                        if state.isRunning && !state.capturer.isCapturing {
+                            Button("Open Settings") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
                     }
-
-                    // Start / Stop
-                    Button(state.isRunning ? "Stop Server" : "Start Server") {
-                        state.isRunning ? state.stopServer() : state.startServer()
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(state.accessibilityGranted ? Color.green : Color.orange)
+                            .frame(width: 8, height: 8)
+                        Text("Control")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 55, alignment: .leading)
+                        Text(state.accessibilityGranted ? "Accessibility granted" : "Not granted")
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(1)
+                        Spacer()
+                        if !state.accessibilityGranted {
+                            Button("Open Settings") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(state.isRunning ? .red : .accentColor)
-                    .controlSize(.large)
-                    .keyboardShortcut(.return, modifiers: [])
                 }
-                .padding(20)
+
+                // Public URL
+                if let url = state.publicURL {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Public URL")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Text(url)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(url, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.plain)
+                            .help("Copy URL")
+                        }
+                        .padding(8)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+
+                // Client count
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(state.statusColor)
+                        .frame(width: 8, height: 8)
+                    Text(state.statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Start / Stop
+                Button(state.isRunning ? "Stop Server" : "Start Server") {
+                    state.isRunning ? state.stopServer() : state.startServer()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(state.isRunning ? .red : .accentColor)
+                .controlSize(.large)
+                .keyboardShortcut(.return, modifiers: [])
             }
+            .padding(20)
         }
         .onAppear  { state.startPermissionPolling() }
         .onDisappear { state.stopPermissionPolling() }
