@@ -131,7 +131,7 @@ final class InputController {
             "Backspace": 51, "Delete": 117,
             "Enter": 36, "Return": 36,
             "Tab": 48, "Escape": 53,
-            " ": 49,                    // Space
+            " ": 49,
 
             // Navigation
             "ArrowLeft": 123, "ArrowRight": 124,
@@ -147,6 +147,15 @@ final class InputController {
             // Modifiers (standalone presses)
             "Shift": 56, "Control": 59, "Alt": 58, "Meta": 55,
             "CapsLock": 57,
+
+            // Number row (US layout) — must use real vk codes or unicode injection
+            // is ignored by many apps because vk=0 conflicts with the character
+            "1": 18, "2": 19, "3": 20, "4": 21, "5": 23,
+            "6": 22, "7": 26, "8": 28, "9": 25, "0": 29,
+
+            // Common punctuation (US layout)
+            "-": 27, "=": 24, "[": 33, "]": 30, "\\": 42,
+            ";": 41, "'": 39, ",": 43, ".": 47, "/": 44, "`": 50,
         ]
         return table[key]
     }

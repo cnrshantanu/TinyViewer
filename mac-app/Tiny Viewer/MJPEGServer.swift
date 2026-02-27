@@ -77,25 +77,32 @@ private let viewerHTML = """
 
     // ── Debug overlay ─────────────────────────────────────────────────────────
     const dbg = document.getElementById('dbg');
-    let frameN = 0, fpsTick = 0;
+    let frameN = 0, fpsTick = 0, rttMs = 0, frameKB = 0;
     setInterval(() => {
-      dbg.textContent = '#' + frameN + '  ' + fpsTick + 'fps';
+      dbg.textContent = '#' + frameN + '  ' + fpsTick + 'fps  rtt:' + rttMs + 'ms  ' + frameKB + 'KB';
       fpsTick = 0;
     }, 1000);
 
     // ── WebSocket (events + video stream) ────────────────────────────────────
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let ws, wsReady = false, frameRequested = false;
+    let ws, wsReady = false, frameRequested = false, frameReadySentAt = 0;
     let prevFrameUrl = null;
 
     function requestFrame() {
       if (!wsReady || frameRequested) return;
       frameRequested = true;
+      frameReadySentAt = Date.now();
       ws.send(JSON.stringify({type: 'frameReady'}));
     }
 
-    // Safety net: guarantee ≥10fps — re-request if no frame within 100ms
-    setInterval(() => { if (!frameRequested) requestFrame(); }, 100);
+    // Safety net: re-request every 100ms; if a frameReady was sent >200ms ago
+    // with no response (lost in tunnel), reset and retry to prevent stalling
+    setInterval(() => {
+      if (frameRequested && Date.now() - frameReadySentAt > 200) {
+        frameRequested = false;  // un-stuck
+      }
+      requestFrame();
+    }, 100);
 
     (function connectWS() {
       ws = new WebSocket(wsProto + '//' + location.host + '/ws');
@@ -103,9 +110,11 @@ private let viewerHTML = """
       ws.onopen = () => { wsReady = true; requestFrame(); };
       ws.onmessage = e => {
         if (!(e.data instanceof Blob)) return;
+        rttMs = Date.now() - frameReadySentAt;
+        frameKB = Math.round(e.data.size / 1024);
         frameRequested = false;
-        requestFrame();            // immediately ask for next frame — decouple from decode
-        frameN = frameN % 60 + 1; // rolling 1-60 counter
+        requestFrame();            // immediately ask for next — decouple from decode
+        frameN = frameN % 60 + 1;
         fpsTick++;
         if (prevFrameUrl) URL.revokeObjectURL(prevFrameUrl);
         prevFrameUrl = URL.createObjectURL(e.data);

@@ -11,9 +11,9 @@ enum StreamQuality: String, CaseIterable {
     case medium = "Medium"
     case high   = "High"
 
-    var maxWidth:    Int    { switch self { case .low: 960;  case .medium: 1280; case .high: 1920 } }
-    var jpegQuality: Double { switch self { case .low: 0.35; case .medium: 0.55; case .high: 0.75 } }
-    var fps:         Int32  { switch self { case .low: 10;   case .medium: 20;   case .high: 30   } }
+    var maxWidth:    Int    { switch self { case .low: 640;  case .medium: 960;  case .high: 1280 } }
+    var jpegQuality: Double { switch self { case .low: 0.15; case .medium: 0.30; case .high: 0.55 } }
+    var fps:         Int32  { switch self { case .low: 10;   case .medium: 15;   case .high: 20   } }
 }
 
 // MARK: - Screen Capturer
