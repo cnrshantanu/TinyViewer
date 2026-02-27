@@ -11,8 +11,9 @@ enum StreamQuality: String, CaseIterable {
     case medium = "Medium"
     case high   = "High"
 
-    var maxWidth:    Int    { switch self { case .low: 640;  case .medium: 960;  case .high: 1280 } }
-    var jpegQuality: Double { switch self { case .low: 0.15; case .medium: 0.30; case .high: 0.55 } }
+    var maxWidth:    Int    { switch self { case .low: 640;  case .medium: 960;  case .high: 1920 } }
+    var webpQuality: Double { switch self { case .low: 0.55; case .medium: 0.72; case .high: 0.85 } }
+    var jpegQuality: Double { switch self { case .low: 0.20; case .medium: 0.45; case .high: 0.70 } }
     var fps:         Int32  { switch self { case .low: 10;   case .medium: 15;   case .high: 20   } }
 }
 
@@ -93,12 +94,31 @@ class ScreenCapturer: NSObject, SCStreamOutput {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
 
-        let rep = NSBitmapImageRep(cgImage: cgImage)
-        guard let jpeg = rep.representation(
-            using: .jpeg,
-            properties: [.compressionFactor: NSNumber(value: quality.jpegQuality)]
-        ) else { return }
+        let q = quality
 
-        onFrame?(jpeg)
+        // Prefer WebP: better compression and sharper edges (no 4:2:0 chroma subsampling)
+        let webpBuf = NSMutableData()
+        var encoded: Data?
+        if let dest = CGImageDestinationCreateWithData(
+            webpBuf, "org.webmproject.webp" as CFString, 1, nil
+        ) {
+            CGImageDestinationAddImage(
+                dest, cgImage,
+                [kCGImageDestinationLossyCompressionQuality: q.webpQuality] as CFDictionary
+            )
+            if CGImageDestinationFinalize(dest) { encoded = webpBuf as Data }
+        }
+
+        // JPEG fallback if WebP encoder is unavailable
+        if encoded == nil {
+            let rep = NSBitmapImageRep(cgImage: cgImage)
+            encoded = rep.representation(
+                using: .jpeg,
+                properties: [.compressionFactor: NSNumber(value: q.jpegQuality)]
+            )
+        }
+
+        guard let data = encoded else { return }
+        onFrame?(data)
     }
 }

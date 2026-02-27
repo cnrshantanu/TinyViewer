@@ -281,7 +281,7 @@ class MJPEGServer {
     nonisolated(unsafe) private var pendingSessions:   Set<String>             = []
     nonisolated(unsafe) private var latestFrame:       Data?                   = nil
     nonisolated(unsafe) private var latestFrameID:    UInt64                  = 0
-    nonisolated(unsafe) private var latestJpeg:       Data?                   = nil
+    nonisolated(unsafe) private var latestImageData:  Data?                   = nil
     nonisolated(unsafe) private var wsVideoReady:     Set<ObjectIdentifier>   = []
     nonisolated(unsafe) private var busyClients:       Set<ObjectIdentifier>   = []
     nonisolated(unsafe) private var lastInputTime:     Date                    = .distantPast
@@ -298,8 +298,8 @@ class MJPEGServer {
     func start() {
         validSessions.removeAll()
         pendingSessions.removeAll()
-        latestFrame  = nil
-        latestJpeg   = nil
+        latestFrame     = nil
+        latestImageData = nil
         busyClients.removeAll()
         wsVideoReady.removeAll()
         lastInputTime = .distantPast
@@ -330,8 +330,8 @@ class MJPEGServer {
             self?.wsVideoReady.removeAll()
             self?.validSessions.removeAll()
             self?.pendingSessions.removeAll()
-            self?.latestFrame = nil
-            self?.latestJpeg  = nil
+            self?.latestFrame     = nil
+            self?.latestImageData = nil
             self?.busyClients.removeAll()
             self?.onClientCountChanged?(0)
         }
@@ -582,8 +582,8 @@ class MJPEGServer {
                     } else if msgType == "frameReady" {
                         // Browser finished rendering — send latest frame immediately
                         wsVideoReady.insert(ObjectIdentifier(conn))
-                        if let jpeg = latestJpeg {
-                            sendWSVideoFrame(jpeg, to: conn)
+                        if let imageData = latestImageData {
+                            sendWSVideoFrame(imageData, to: conn)
                         }
                     } else {
                         InputController.shared.handleEvent(json)
@@ -665,26 +665,35 @@ class MJPEGServer {
 
     // MARK: - Broadcast
 
+    /// Returns "image/webp" or "image/jpeg" by inspecting magic bytes.
+    private func mimeType(of data: Data) -> String {
+        let h = data.prefix(4)
+        if h.starts(with: [0xFF, 0xD8, 0xFF]) { return "image/jpeg" }
+        if h.starts(with: [0x52, 0x49, 0x46, 0x46]) { return "image/webp" }
+        return "image/jpeg"
+    }
+
     /// Latest-frame-wins: each client only receives the newest frame once it
     /// finishes sending the previous one. No frames accumulate in the send buffer.
-    nonisolated func broadcastFrame(_ jpeg: Data) {
-        var frame = Data("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: \(jpeg.count)\r\n\r\n".utf8)
-        frame.append(jpeg)
+    nonisolated func broadcastFrame(_ imageData: Data) {
+        let mime = mimeType(of: imageData)
+        var frame = Data("--frame\r\nContent-Type: \(mime)\r\nContent-Length: \(imageData.count)\r\n\r\n".utf8)
+        frame.append(imageData)
         frame.append(Data("\r\n".utf8))
 
         queue.async { [weak self] in
             guard let self else { return }
             self.latestFrameID &+= 1
             let fid = self.latestFrameID
-            self.latestFrame = frame
-            self.latestJpeg  = jpeg
+            self.latestFrame     = frame
+            self.latestImageData = imageData
             // MJPEG stream clients (legacy / test)
             for conn in self.streamConnections where !self.busyClients.contains(ObjectIdentifier(conn)) {
                 self.sendFrame(frame, frameID: fid, to: conn)
             }
             // WS video clients — pull model, only send if browser has requested a frame
             for conn in self.wsConnections where self.wsVideoReady.contains(ObjectIdentifier(conn)) {
-                self.sendWSVideoFrame(jpeg, to: conn)
+                self.sendWSVideoFrame(imageData, to: conn)
             }
         }
     }
@@ -711,12 +720,12 @@ class MJPEGServer {
         return frame
     }
 
-    /// Send a single JPEG frame to a WS client. Marks the client as not-ready until
-    /// it sends a frameReady message — this is the pull-model backpressure mechanism.
-    nonisolated private func sendWSVideoFrame(_ jpeg: Data, to conn: NWConnection) {
+    /// Send a single image frame (WebP or JPEG) to a WS client. Marks the client as
+    /// not-ready until it sends a frameReady message — pull-model backpressure.
+    nonisolated private func sendWSVideoFrame(_ imageData: Data, to conn: NWConnection) {
         let id = ObjectIdentifier(conn)
         wsVideoReady.remove(id)   // not ready until browser acks
-        let wsFrame = buildWSBinaryFrame(jpeg)
+        let wsFrame = buildWSBinaryFrame(imageData)
         conn.send(content: wsFrame, completion: .contentProcessed { [weak self] error in
             if let error {
                 self?.queue.async {
