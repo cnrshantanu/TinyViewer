@@ -1,7 +1,7 @@
-import AppKit
 import CoreImage
 import CoreMedia
 import Foundation
+import ImageIO
 import ScreenCaptureKit
 
 // MARK: - Quality Preset
@@ -11,9 +11,16 @@ enum StreamQuality: String, CaseIterable {
     case medium = "Medium"
     case high   = "High"
 
+    /// Maximum capture width in pixels (SCStream physical pixels).
+    /// On a 1920×1080 Retina display (3840×2160 physical), High=1920 gives
+    /// half-retina = full logical-pixel resolution.
     var maxWidth:    Int    { switch self { case .low: 640;  case .medium: 960;  case .high: 1920 } }
-    var webpQuality: Double { switch self { case .low: 0.55; case .medium: 0.72; case .high: 0.85 } }
-    var jpegQuality: Double { switch self { case .low: 0.20; case .medium: 0.45; case .high: 0.70 } }
+
+    /// JPEG quality: 0.0 = maximum compression (worst), 1.0 = minimum compression (best).
+    /// Low/Medium are tuned for bandwidth; High is tuned for clarity.
+    var jpegQuality: Double { switch self { case .low: 0.65; case .medium: 0.75; case .high: 0.85 } }
+
+    /// Maximum capture rate (frames/sec). Actual delivery rate is limited by network RTT.
     var fps:         Int32  { switch self { case .low: 10;   case .medium: 15;   case .high: 20   } }
 }
 
@@ -94,31 +101,16 @@ class ScreenCapturer: NSObject, SCStreamOutput {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
 
-        let q = quality
+        let buf = NSMutableData()
+        guard let dst = CGImageDestinationCreateWithData(buf, "public.jpeg" as CFString, 1, nil)
+        else { return }
 
-        // Prefer WebP: better compression and sharper edges (no 4:2:0 chroma subsampling)
-        let webpBuf = NSMutableData()
-        var encoded: Data?
-        if let dest = CGImageDestinationCreateWithData(
-            webpBuf, "org.webmproject.webp" as CFString, 1, nil
-        ) {
-            CGImageDestinationAddImage(
-                dest, cgImage,
-                [kCGImageDestinationLossyCompressionQuality: q.webpQuality] as CFDictionary
-            )
-            if CGImageDestinationFinalize(dest) { encoded = webpBuf as Data }
-        }
+        CGImageDestinationAddImage(
+            dst, cgImage,
+            [kCGImageDestinationLossyCompressionQuality: quality.jpegQuality] as CFDictionary
+        )
+        guard CGImageDestinationFinalize(dst) else { return }
 
-        // JPEG fallback if WebP encoder is unavailable
-        if encoded == nil {
-            let rep = NSBitmapImageRep(cgImage: cgImage)
-            encoded = rep.representation(
-                using: .jpeg,
-                properties: [.compressionFactor: NSNumber(value: q.jpegQuality)]
-            )
-        }
-
-        guard let data = encoded else { return }
-        onFrame?(data)
+        onFrame?(buf as Data)
     }
 }
