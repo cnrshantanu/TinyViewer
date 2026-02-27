@@ -75,11 +75,42 @@ private let viewerHTML = """
       return {x, y};
     }
 
-    // ── Debug overlay ─────────────────────────────────────────────────────────
+    // ── Debug overlay + adaptive quality ──────────────────────────────────────
     const dbg = document.getElementById('dbg');
     let frameN = 0, fpsTick = 0, rttMs = 0, frameKB = 0;
+
+    // Adaptive quality: auto-step down when fps < 8 for 3s, back up when fps > 11 for 5s.
+    // userQualityIdx = user's max preference (set by button click).
+    // qualityIdx     = current quality (may be lower if auto-reduced).
+    let userQualityIdx = qualityIdx;
+    let lowFpsCount = 0, highFpsCount = 0, lastAutoChange = 0;
+    const AUTO_COOLDOWN = 8000;  // ms between auto quality changes
+
     setInterval(() => {
-      dbg.textContent = '#' + frameN + '  ' + fpsTick + 'fps  rtt:' + rttMs + 'ms  ' + frameKB + 'KB';
+      const fps = fpsTick;
+      const now = Date.now();
+      if (now - lastAutoChange > AUTO_COOLDOWN) {
+        if (fps < 8 && qualityIdx > 0) {
+          if (++lowFpsCount >= 3) {
+            qualityIdx--;
+            send({type: 'quality', quality: qualities[qualityIdx]});
+            document.getElementById('qualityBtn').textContent = qualityLabels[qualityIdx] + (qualityIdx < userQualityIdx ? '↓' : '');
+            lowFpsCount = 0; highFpsCount = 0; lastAutoChange = now;
+          }
+        } else if (fps > 11 && qualityIdx < userQualityIdx) {
+          if (++highFpsCount >= 5) {
+            qualityIdx++;
+            send({type: 'quality', quality: qualities[qualityIdx]});
+            document.getElementById('qualityBtn').textContent = qualityLabels[qualityIdx] + (qualityIdx < userQualityIdx ? '↓' : '');
+            highFpsCount = 0; lowFpsCount = 0; lastAutoChange = now;
+          }
+        } else {
+          if (fps >= 8) lowFpsCount = 0;
+          if (fps <= 11) highFpsCount = 0;
+        }
+      }
+      const qLabel = qualityLabels[qualityIdx] + (qualityIdx < userQualityIdx ? '↓' : '');
+      dbg.textContent = '#' + frameN + '  ' + fps + 'fps  rtt:' + rttMs + 'ms  ' + frameKB + 'KB  ' + qLabel;
       fpsTick = 0;
     }, 1000);
 
@@ -177,14 +208,16 @@ private let viewerHTML = """
       send({type: 'wheel', dx: e.deltaX, dy: e.deltaY});
     }, {passive: false});
 
-    // Quality selector — click cycles Low → Med → High → Low
+    // Quality selector — click cycles Low → Med → High → Low, sets user's max preference
     const qualities = ['Low', 'Medium', 'High'];
     const qualityLabels = ['Low', 'Med', 'High'];
     let qualityIdx = 1;
     function cycleQuality() {
-      qualityIdx = (qualityIdx + 1) % qualities.length;
+      userQualityIdx = (userQualityIdx + 1) % qualities.length;
+      qualityIdx = userQualityIdx;
       document.getElementById('qualityBtn').textContent = qualityLabels[qualityIdx];
       send({type: 'quality', quality: qualities[qualityIdx]});
+      lowFpsCount = 0; highFpsCount = 0; lastAutoChange = 0;
     }
 
     // Keyboard — sent immediately with no batching delay

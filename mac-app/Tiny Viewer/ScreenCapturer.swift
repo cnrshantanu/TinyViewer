@@ -94,9 +94,20 @@ class ScreenCapturer: NSObject, SCStreamOutput {
         didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
         of type: SCStreamOutputType
     ) {
-        guard type == .screen,
-              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
-        else { return }
+        guard type == .screen else { return }
+
+        // Skip idle/blank frames — screen content hasn't changed, no need to encode or send
+        if let attachments = CMCopyDictionaryOfAttachments(
+            allocator: kCFAllocatorDefault,
+            target: sampleBuffer,
+            attachmentMode: kCMAttachmentMode_ShouldPropagate
+        ) as? [String: Any],
+           let statusRaw = attachments[SCStreamFrameInfo.status.rawValue] as? Int,
+           SCFrameStatus(rawValue: statusRaw) != .complete {
+            return
+        }
+
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
