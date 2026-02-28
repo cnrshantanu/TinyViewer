@@ -103,7 +103,8 @@ class ScreenCapturer: NSObject, SCStreamOutput {
             attachmentMode: kCMAttachmentMode_ShouldPropagate
         ) as? [String: Any],
            let statusRaw = attachments[SCStreamFrameInfo.status.rawValue] as? Int,
-           SCFrameStatus(rawValue: statusRaw) != .complete {
+           let status = SCFrameStatus(rawValue: statusRaw),
+           status != .complete {
             return
         }
 

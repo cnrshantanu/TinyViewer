@@ -75,16 +75,10 @@ private let viewerHTML = """
       return {x, y};
     }
 
-    // ── Debug overlay + adaptive quality ──────────────────────────────────────
+    // ── Debug overlay ─────────────────────────────────────────────────────────
     const dbg = document.getElementById('dbg');
     let frameN = 0, fpsTick = 0, rttMs = 0, frameKB = 0;
-
-    // Adaptive quality: auto-step down when fps < 8 for 3s, back up when fps > 11 for 5s.
-    // userQualityIdx = user's max preference (set by button click).
-    // qualityIdx     = current quality (may be lower if auto-reduced).
-    let userQualityIdx = qualityIdx;
     let lowFpsCount = 0, highFpsCount = 0, lastAutoChange = 0;
-    const AUTO_COOLDOWN = 8000;  // ms between auto quality changes
 
     setInterval(() => {
       const fps = fpsTick;
@@ -212,6 +206,9 @@ private let viewerHTML = """
     const qualities = ['Low', 'Medium', 'High'];
     const qualityLabels = ['Low', 'Med', 'High'];
     let qualityIdx = 1;
+    // Adaptive quality: userQualityIdx = user's chosen max; qualityIdx may be auto-reduced.
+    let userQualityIdx = qualityIdx;
+    const AUTO_COOLDOWN = 8000;  // ms between auto quality changes
     function cycleQuality() {
       userQualityIdx = (userQualityIdx + 1) % qualities.length;
       qualityIdx = userQualityIdx;
