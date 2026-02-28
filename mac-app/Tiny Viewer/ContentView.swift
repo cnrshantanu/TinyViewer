@@ -203,18 +203,24 @@ class AppState {
 // MARK: - Root view
 
 struct ContentView: View {
-    @State private var state = AppState()
+    @State private var state   = AppState()
+    private let license        = LicenseManager.shared
 
     var body: some View {
         Group {
-            if state.currentUser == nil {
+            if case .trialExpired = license.state {
+                PaywallView()
+            } else if state.currentUser == nil {
                 SignInView(state: state)
             } else {
                 DashboardView(state: state)
             }
         }
         .frame(width: 380)
-        .onAppear { state.restoreSessionIfPossible() }
+        .onAppear {
+            license.initialize()
+            state.restoreSessionIfPossible()
+        }
     }
 }
 
@@ -278,9 +284,16 @@ struct SignInView: View {
 
 struct DashboardView: View {
     let state: AppState
+    private let license = LicenseManager.shared
 
     var body: some View {
         VStack(spacing: 0) {
+
+            // ── Trial banner (shown only in last 30 days) ──────────────────
+            if let days = license.daysRemainingInTrial, days < 30 {
+                TrialBanner(daysRemaining: days)
+                Divider()
+            }
 
             // ── Top bar ────────────────────────────────────────────────────
             HStack {
