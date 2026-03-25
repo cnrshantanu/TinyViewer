@@ -1,0 +1,28 @@
+// MARK: - ⚙️  Fill in your Firebase + Google credentials
+//
+// Copy this file to FirebaseConfig.swift and fill in your values.
+// FirebaseConfig.swift is gitignored — never commit real credentials.
+//
+// How to get these values:
+//
+//  projectID   → Firebase Console → Project Settings → General → Project ID
+//  webAPIKey   → Firebase Console → Project Settings → General → Web API Key
+//
+//  googleClientID / googleClientSecret:
+//    1. Google Cloud Console → APIs & Services → Credentials
+//    2. Create OAuth 2.0 Client ID → Application type: "Desktop app"
+//    3. Copy the Client ID and Client Secret
+//    4. Also add http://localhost as an Authorized Redirect URI
+//
+//  Firebase Console → Authentication → Sign-in method → enable Google
+
+enum FirebaseConfig {
+    static let projectID          = "YOUR_PROJECT_ID"
+    static let webAPIKey          = "YOUR_WEB_API_KEY"
+    static let googleClientID     = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com"
+    static let googleClientSecret = "YOUR_GOOGLE_CLIENT_SECRET"
+
+    static var isConfigured: Bool {
+        !projectID.hasPrefix("YOUR_") && !webAPIKey.hasPrefix("YOUR_")
+    }
+}

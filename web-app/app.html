@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Viewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .card {
+      background: #1c1c1e;
+      border-radius: 24px;
+      width: 380px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,.6);
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .card-header {
+      padding: 1.5rem 1.5rem 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+    }
+    .card-header .logo { font-size: 1.6rem; line-height: 1 }
+    .card-header .title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      flex: 1;
+    }
+
+    /* ── Login panel ─────────────────────────────────────────── */
+    .login-body {
+      padding: 0 1.5rem 1.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+    .login-tagline {
+      font-size: .85rem;
+      color: #888;
+      text-align: center;
+      padding-bottom: .4rem;
+    }
+
+    /* ── Google button ──────────────────────────────────────── */
+    .google-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .75rem;
+      width: 100%;
+      padding: .85rem 1rem;
+      border-radius: 14px;
+      border: none;
+      background: #fff;
+      color: #111;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    .google-btn:hover   { background: #f0f0f0 }
+    .google-btn:active  { background: #e0e0e0; transform: scale(.99) }
+    .google-btn:disabled { opacity: .45; cursor: default; transform: none }
+    .google-btn svg { width: 20px; height: 20px; flex-shrink: 0 }
+
+    .msg {
+      font-size: .82rem;
+      text-align: center;
+      color: #888;
+      min-height: 1.1rem;
+    }
+    .msg.error  { color: #ff453a }
+
+    /* ── Dash: user bar ─────────────────────────────────────── */
+    .user-bar {
+      padding: .8rem 1.5rem;
+      background: #111;
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      border-bottom: 1px solid #2c2c2e;
+    }
+    .user-bar img {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .user-bar .email {
+      flex: 1;
+      font-size: .8rem;
+      color: #aaa;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .sign-out-btn {
+      background: #2c2c2e;
+      border: 1px solid #3a3a3c;
+      color: #ccc;
+      cursor: pointer;
+      font-size: .78rem;
+      font-weight: 600;
+      padding: .35rem .8rem;
+      border-radius: 8px;
+      flex-shrink: 0;
+      transition: background .15s;
+    }
+    .sign-out-btn:hover { background: #3a3a3c; color: #fff }
+
+    /* ── Dash: body ─────────────────────────────────────────── */
+    .dash-body {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+
+    /* ── Offline state ──────────────────────────────────────── */
+    .offline-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .8rem;
+      padding: 1rem 0 .5rem;
+    }
+    .offline-icon {
+      font-size: 3rem;
+      line-height: 1;
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1 }
+      50%       { opacity: .35 }
+    }
+    .offline-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .offline-sub {
+      font-size: .82rem;
+      color: #666;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* ── Online state ───────────────────────────────────────── */
+    .online-state {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .machine-row {
+      display: flex;
+      align-items: center;
+      gap: .7rem;
+      padding: .9rem 1rem;
+      background: #111;
+      border-radius: 14px;
+      border: 1px solid #2c2c2e;
+    }
+    .machine-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #30d158;
+      flex-shrink: 0;
+      box-shadow: 0 0 6px #30d158;
+    }
+    .machine-info { flex: 1; min-width: 0 }
+    .machine-name {
+      font-size: .95rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .machine-status {
+      font-size: .75rem;
+      color: #30d158;
+      margin-top: .1rem;
+    }
+
+    .action-row {
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+    .connect-btn {
+      width: 100%;
+      padding: .95rem;
+      border-radius: 14px;
+      border: none;
+      background: linear-gradient(135deg, #0a84ff 0%, #0066cc 100%);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: .01em;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      box-shadow: 0 4px 16px rgba(10,132,255,.35);
+    }
+    .connect-btn:hover  { opacity: .88 }
+    .connect-btn:active { opacity: .75; transform: scale(.99) }
+    .connect-btn:disabled { opacity: .45; cursor: default; transform: none }
+
+    .terminal-btn {
+      width: 100%;
+      padding: .8rem;
+      border-radius: 14px;
+      border: 1px solid #3a3a3c;
+      background: transparent;
+      color: #8e8e93;
+      font-size: .9rem;
+      font-weight: 600;
+      letter-spacing: .01em;
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s, transform .1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .45rem;
+    }
+    .terminal-btn:hover  { background: #1c1c1e; border-color: #555; color: #e5e5ea }
+    .terminal-btn:active { background: #2c2c2e; transform: scale(.99) }
+    .terminal-btn:disabled { opacity: .4; cursor: default; transform: none }
+
+    /* ── Footer status ──────────────────────────────────────── */
+    .footer-status {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding-top: .4rem;
+      border-top: 1px solid #2c2c2e;
+    }
+    .footer-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .footer-dot.green  { background: #30d158 }
+    .footer-dot.orange { background: #ff9f0a }
+    .footer-dot.red    { background: #ff453a }
+    .footer-label {
+      font-size: .75rem;
+      color: #555;
+    }
+
+    .hidden { display: none !important }
+  </style>
+</head>
+<body>
+
+<div class="card" id="app">
+
+  <!-- ── Login panel ──────────────────────────────────────────── -->
+  <div id="loginPanel">
+    <div class="card-header">
+      <span class="logo">🖥</span>
+      <span class="title">Tiny Viewer</span>
+    </div>
+    <div class="login-body">
+      <p class="login-tagline">Sign in to access your Mac remotely</p>
+      <button class="google-btn" id="googleBtn" onclick="startSignIn()">
+        <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        Continue with Google
+      </button>
+      <p class="msg" id="loginMsg"></p>
+    </div>
+  </div>
+
+  <!-- ── Dashboard panel ─────────────────────────────────────── -->
+  <div id="dashPanel" class="hidden">
+
+    <!-- User bar -->
+    <div class="user-bar">
+      <img id="userPhoto" src="" alt="" style="display:none">
+      <span class="email" id="userEmail"></span>
+      <button class="sign-out-btn" onclick="doSignOut()">Sign Out</button>
+    </div>
+
+    <div class="dash-body">
+
+      <!-- Offline state -->
+      <div id="offlineState" class="offline-state">
+        <div class="offline-icon">🖥</div>
+        <div class="offline-title">Waiting for Mac…</div>
+        <div class="offline-sub">Open Tiny Viewer on your Mac<br>and click <strong>Start Server</strong></div>
+      </div>
+
+      <!-- Online state -->
+      <div id="onlineState" class="online-state hidden">
+        <div class="machine-row">
+          <div class="machine-dot"></div>
+          <div class="machine-info">
+            <div class="machine-name" id="machineName">Mac</div>
+            <div class="machine-status">Online · ready to connect</div>
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="connect-btn" id="connectBtn" onclick="connectNow()">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="1" y="2" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M5 14h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M8 12v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Connect to Mac
+          </button>
+          <button class="terminal-btn" id="terminalBtn" onclick="terminalNow()">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2.5 5L5.5 7.5 2.5 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M7 10h5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            Open Terminal
+          </button>
+        </div>
+      </div>
+
+      <!-- Footer: Firebase status -->
+      <div class="footer-status">
+        <div class="footer-dot" id="dotFirebase"></div>
+        <span class="footer-label" id="lblFirebase">Connecting to Firebase…</span>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Firebase SDK ───────────────────────────────────────────────────── -->
+<script type="module">
+  import { initializeApp }              from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getAuth,
+           GoogleAuthProvider,
+           signInWithPopup,
+           signOut,
+           onAuthStateChanged }         from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+  import { getFirestore,
+           doc,
+           onSnapshot }                 from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  // ─── ⚙️  Paste your Firebase project config here ──────────────────────
+  const firebaseConfig = {
+    apiKey:            "AIzaSyCUePf4JLaONJg1NIIGGh-HHqHmKXPghJQ",
+    authDomain:        "tiny-viewer.firebaseapp.com",
+    projectId:         "tiny-viewer",
+    storageBucket:     "tiny-viewer.firebasestorage.app",
+    messagingSenderId: "212026968611",
+    appId:             "1:212026968611:web:ae8c4daeda85051df77f96",
+  };
+  // ──────────────────────────────────────────────────────────────────────
+
+  const app      = initializeApp(firebaseConfig);
+  const auth     = getAuth(app);
+  const db       = getFirestore(app);
+  const provider = new GoogleAuthProvider();
+
+  let unsubTunnel      = null;
+  let currentTunnelURL = null;
+  let currentUID       = null;
+
+  // ── Auth state ──────────────────────────────────────────────────────────
+  onAuthStateChanged(auth, user => {
+    if (user) {
+      showDash(user);
+      watchTunnel(user.uid);
+    } else {
+      showLogin();
+    }
+  });
+
+  // ── Sign in ─────────────────────────────────────────────────────────────
+  window.startSignIn = async function() {
+    const btn = document.getElementById('googleBtn');
+    const msg = document.getElementById('loginMsg');
+    btn.disabled = true;
+    msg.textContent = 'Opening sign-in…';
+    msg.className = 'msg';
+    try {
+      await signInWithPopup(auth, provider);
+    } catch(e) {
+      if (e.code !== 'auth/popup-closed-by-user') {
+        msg.textContent = e.message;
+        msg.className = 'msg error';
+      } else {
+        msg.textContent = '';
+      }
+      btn.disabled = false;
+    }
+  };
+
+  // ── Sign out ────────────────────────────────────────────────────────────
+  window.doSignOut = async function() {
+    unsubTunnel?.();
+    currentTunnelURL = null;
+    currentUID       = null;
+    await signOut(auth);
+  };
+
+  // ── Connect ─────────────────────────────────────────────────────────────
+  async function getTokenAndRedirect(destination, btnId, resetLabel) {
+    const user = auth.currentUser;
+    if (!user || !currentTunnelURL) return;
+    const btn = document.getElementById(btnId);
+    const origText = btn.textContent;
+    btn.textContent = 'Connecting…';
+    btn.disabled = true;
+    try {
+      const idToken = await user.getIdToken();
+      window.location.href = currentTunnelURL + destination + '?token=' + encodeURIComponent(idToken);
+    } catch (e) {
+      btn.textContent = resetLabel;
+      btn.disabled = false;
+      console.error('Auth token error:', e);
+    }
+  }
+
+  window.connectNow  = () => getTokenAndRedirect('/',         'connectBtn',  'Connect →');
+  window.terminalNow = () => getTokenAndRedirect('/terminal', 'terminalBtn', '⌨ Terminal');
+
+  // ── Panels ──────────────────────────────────────────────────────────────
+  function showLogin() {
+    document.getElementById('loginPanel').classList.remove('hidden');
+    document.getElementById('dashPanel').classList.add('hidden');
+    document.getElementById('googleBtn').disabled = false;
+    document.getElementById('loginMsg').textContent = '';
+  }
+
+  function showDash(user) {
+    currentUID = user.uid;
+    document.getElementById('loginPanel').classList.add('hidden');
+    document.getElementById('dashPanel').classList.remove('hidden');
+    document.getElementById('userEmail').textContent = user.email;
+    const photo = document.getElementById('userPhoto');
+    if (user.photoURL) { photo.src = user.photoURL; photo.style.display = ''; }
+    setFooterDot('green');
+    document.getElementById('lblFirebase').textContent = 'Connected to Firebase';
+  }
+
+  // ── Firestore watch ─────────────────────────────────────────────────────
+  function watchTunnel(uid) {
+    unsubTunnel?.();
+    const ref = doc(db, 'tunnels', uid);
+    unsubTunnel = onSnapshot(ref,
+      snap => {
+        const data   = snap.exists() ? snap.data() : null;
+        const online = data?.status === 'online' && !!data?.url;
+
+        if (online) {
+          currentTunnelURL = data.url;
+          document.getElementById('machineName').textContent = data.name || 'Mac';
+          document.getElementById('offlineState').classList.add('hidden');
+          document.getElementById('onlineState').classList.remove('hidden');
+        } else {
+          currentTunnelURL = null;
+          document.getElementById('offlineState').classList.remove('hidden');
+          document.getElementById('onlineState').classList.add('hidden');
+        }
+      },
+      err => {
+        setFooterDot('red');
+        document.getElementById('lblFirebase').textContent = 'Firestore error: ' + err.message;
+      }
+    );
+  }
+
+  function setFooterDot(color) {
+    const el = document.getElementById('dotFirebase');
+    el.className = 'footer-dot ' + color;
+  }
+</script>
+
+</body>
+</html>

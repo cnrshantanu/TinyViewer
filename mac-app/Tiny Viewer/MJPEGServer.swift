@@ -45,23 +45,55 @@ private let viewerHTML = """
     *{box-sizing:border-box;margin:0;padding:0}
     html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:none}
     img{width:100%;height:100%;object-fit:contain;display:block;user-select:none;-webkit-user-drag:none}
-    #qbar{position:fixed;top:10px;right:10px;display:flex;gap:4px;z-index:10}
-    .qbtn{background:rgba(0,0,0,.65);color:#aaa;border:1px solid #444;border-radius:6px;padding:4px 9px;font-size:11px;font-family:-apple-system,sans-serif;cursor:pointer;transition:background .15s,color .15s}
-    .qbtn:hover{background:rgba(40,40,40,.9);color:#fff}
-    .qbtn.active{background:#0a84ff;color:#fff;border-color:#0a84ff}
-    #dbg{position:fixed;bottom:8px;left:8px;background:rgba(0,0,0,.65);color:#0f0;font:12px/1 'SF Mono',monospace;padding:5px 8px;border-radius:6px;z-index:20;pointer-events:none}
+    #toolbar{position:fixed;top:10px;right:10px;display:flex;gap:4px;z-index:10;opacity:0;transition:opacity .25s}
+    #toolbar.vis{opacity:1}
+    .tbtn{background:rgba(0,0,0,.65);color:#aaa;border:1px solid #444;border-radius:6px;padding:4px 9px;font-size:11px;font-family:-apple-system,sans-serif;cursor:pointer;transition:background .15s,color .15s}
+    .tbtn:hover{background:rgba(40,40,40,.9);color:#fff}
+    .tbtn.lit{background:#0a84ff;color:#fff;border-color:#0a84ff}
+    .tsep{width:1px;background:#444;margin:0 2px}
+    #status{position:fixed;bottom:8px;left:8px;z-index:20;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+    #dbgPanel{display:none;background:rgba(0,0,0,.7);color:#0f0;font:11px/1.4 'SF Mono',monospace;padding:6px 8px;border-radius:6px;pointer-events:none;white-space:nowrap}
+    #dbgPanel.open{display:block}
+    #pill{display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);border-radius:100px;padding:3px 8px;cursor:pointer;font:11px -apple-system,sans-serif;color:rgba(255,255,255,.7)}
+    #dot{width:6px;height:6px;border-radius:50%;background:#888;flex-shrink:0}
+    #dot.green{background:#30d158;box-shadow:0 0 4px #30d158}
+    #dot.orange{background:#ff9f0a;box-shadow:0 0 4px #ff9f0a}
+    #dot.red{background:#ff453a;box-shadow:0 0 4px #ff453a}
   </style>
 </head>
 <body>
   <img id="s" draggable="false">
-  <div id="dbg">–</div>
-  <div id="qbar">
-    <button class="qbtn active" id="qualityBtn" onclick="cycleQuality()">Med</button>
+  <div id="status">
+    <div id="dbgPanel"></div>
+    <div id="pill" onclick="toggleDbg()"><div id="dot"></div><span id="pillTxt">Connecting…</span></div>
+  </div>
+  <div id="toolbar">
+    <button class="tbtn lit" id="qualityBtn" onclick="cycleQuality()">Med</button>
+    <div class="tsep"></div>
+    <button class="tbtn" onclick="window.open('/terminal','_blank')">Terminal</button>
+    <button class="tbtn" onclick="resetSession()" title="Release stuck keys/mouse and reconnect">↺</button>
   </div>
   <script>
     const img = document.getElementById('s');
+    const dot = document.getElementById('dot');
+    const pillTxt = document.getElementById('pillTxt');
+    const dbgPanel = document.getElementById('dbgPanel');
+    let dbgOpen = false;
 
-    // Normalise client coords → 0-1 for object-fit:contain
+    function toggleDbg() { dbgOpen = !dbgOpen; dbgPanel.className = dbgOpen ? 'open' : ''; }
+
+    // ── Toolbar auto-hide ──────────────────────────────────────────────────────
+    const toolbar = document.getElementById('toolbar');
+    let hideTimer = null;
+    function showToolbar() {
+      toolbar.classList.add('vis');
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => toolbar.classList.remove('vis'), 2500);
+    }
+    document.addEventListener('mousemove', showToolbar);
+    document.addEventListener('touchstart', showToolbar, {passive:true});
+
+    // ── Coordinate normaliser ──────────────────────────────────────────────────
     function norm(cx, cy) {
       const r  = img.getBoundingClientRect();
       const iw = img.naturalWidth  || r.width;
@@ -70,164 +102,313 @@ private let viewerHTML = """
       const dw = iw * sc, dh = ih * sc;
       const ox = (r.width  - dw) / 2;
       const oy = (r.height - dh) / 2;
-      const x  = Math.max(0, Math.min(1, (cx - r.left - ox) / dw));
-      const y  = Math.max(0, Math.min(1, (cy - r.top  - oy) / dh));
-      return {x, y};
+      return {
+        x: Math.max(0, Math.min(1, (cx - r.left - ox) / dw)),
+        y: Math.max(0, Math.min(1, (cy - r.top  - oy) / dh))
+      };
     }
 
-    // ── Debug overlay ─────────────────────────────────────────────────────────
-    const dbg = document.getElementById('dbg');
+    // ── Stats ──────────────────────────────────────────────────────────────────
     let frameN = 0, fpsTick = 0, rttMs = 0, frameKB = 0;
     let lowFpsCount = 0, highFpsCount = 0, lastAutoChange = 0;
+    const AUTO_COOLDOWN = 8000;
+    const qualities = ['Low','Medium','High'], qualityLabels = ['Low','Med','High'];
+    let qualityIdx = 1, userQualityIdx = 1;
+
+    function updateQualityBtn() {
+      const lbl = qualityLabels[qualityIdx] + (qualityIdx < userQualityIdx ? '↓' : '');
+      document.getElementById('qualityBtn').textContent = lbl;
+      document.getElementById('qualityBtn').className = 'tbtn lit';
+    }
 
     setInterval(() => {
-      const fps = fpsTick;
-      const now = Date.now();
+      const fps = fpsTick, now = Date.now();
       if (now - lastAutoChange > AUTO_COOLDOWN) {
         if (fps < 8 && qualityIdx > 0) {
-          if (++lowFpsCount >= 3) {
-            qualityIdx--;
-            send({type: 'quality', quality: qualities[qualityIdx]});
-            document.getElementById('qualityBtn').textContent = qualityLabels[qualityIdx] + (qualityIdx < userQualityIdx ? '↓' : '');
-            lowFpsCount = 0; highFpsCount = 0; lastAutoChange = now;
-          }
+          if (++lowFpsCount >= 3) { qualityIdx--; send({type:'quality',quality:qualities[qualityIdx]}); updateQualityBtn(); lowFpsCount=0; highFpsCount=0; lastAutoChange=now; }
         } else if (fps > 11 && qualityIdx < userQualityIdx) {
-          if (++highFpsCount >= 5) {
-            qualityIdx++;
-            send({type: 'quality', quality: qualities[qualityIdx]});
-            document.getElementById('qualityBtn').textContent = qualityLabels[qualityIdx] + (qualityIdx < userQualityIdx ? '↓' : '');
-            highFpsCount = 0; lowFpsCount = 0; lastAutoChange = now;
-          }
-        } else {
-          if (fps >= 8) lowFpsCount = 0;
-          if (fps <= 11) highFpsCount = 0;
-        }
+          if (++highFpsCount >= 5) { qualityIdx++; send({type:'quality',quality:qualities[qualityIdx]}); updateQualityBtn(); highFpsCount=0; lowFpsCount=0; lastAutoChange=now; }
+        } else { if(fps>=8)lowFpsCount=0; if(fps<=11)highFpsCount=0; }
       }
-      const qLabel = qualityLabels[qualityIdx] + (qualityIdx < userQualityIdx ? '↓' : '');
-      dbg.textContent = '#' + frameN + '  ' + fps + 'fps  rtt:' + rttMs + 'ms  ' + frameKB + 'KB  ' + qLabel;
+      dbgPanel.textContent = '#'+frameN+'  '+fps+'fps  rtt:'+rttMs+'ms  '+frameKB+'KB  '+qualityLabels[qualityIdx];
       fpsTick = 0;
     }, 1000);
 
-    // ── WebSocket (events + video stream) ────────────────────────────────────
-    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let ws, wsReady = false, frameRequested = false, frameReadySentAt = 0;
-    let prevFrameUrl = null;
+    // ── WebSocket ──────────────────────────────────────────────────────────────
+    const wsProto = location.protocol==='https:'?'wss:':'ws:';
+    let ws, wsReady=false, frameRequested=false, frameReadySentAt=0, prevFrameUrl=null;
 
     function requestFrame() {
       if (!wsReady || frameRequested) return;
-      frameRequested = true;
-      frameReadySentAt = Date.now();
-      ws.send(JSON.stringify({type: 'frameReady'}));
+      frameRequested = true; frameReadySentAt = Date.now();
+      ws.send(JSON.stringify({type:'frameReady'}));
     }
+    setInterval(() => { if(frameRequested && Date.now()-frameReadySentAt>200) frameRequested=false; requestFrame(); }, 100);
 
-    // Safety net: re-request every 100ms; if a frameReady was sent >200ms ago
-    // with no response (lost in tunnel), reset and retry to prevent stalling
-    setInterval(() => {
-      if (frameRequested && Date.now() - frameReadySentAt > 200) {
-        frameRequested = false;  // un-stuck
-      }
-      requestFrame();
-    }, 100);
-
-    (function connectWS() {
-      ws = new WebSocket(wsProto + '//' + location.host + '/ws');
+    function connectWS() {
+      ws = new WebSocket(wsProto+'//'+location.host+'/ws');
       ws.binaryType = 'blob';
-      ws.onopen = () => { wsReady = true; requestFrame(); };
+      ws.onopen  = () => { wsReady=true; dot.className='green'; pillTxt.textContent='Live'; requestFrame(); };
+      ws.onclose = () => { wsReady=false; frameRequested=false; dot.className='orange'; pillTxt.textContent='Reconnecting…'; setTimeout(connectWS,1500); };
+      ws.onerror = () => {};
       ws.onmessage = e => {
         if (!(e.data instanceof Blob)) return;
-        rttMs = Date.now() - frameReadySentAt;
-        frameKB = Math.round(e.data.size / 1024);
-        frameRequested = false;
-        requestFrame();            // immediately ask for next — decouple from decode
-        frameN = frameN % 60 + 1;
-        fpsTick++;
-        if (prevFrameUrl) URL.revokeObjectURL(prevFrameUrl);
-        prevFrameUrl = URL.createObjectURL(e.data);
-        img.src = prevFrameUrl;
+        rttMs = Date.now()-frameReadySentAt; frameKB=Math.round(e.data.size/1024);
+        frameRequested=false; requestFrame();
+        frameN=frameN%60+1; fpsTick++;
+        if(prevFrameUrl)URL.revokeObjectURL(prevFrameUrl);
+        prevFrameUrl=URL.createObjectURL(e.data); img.src=prevFrameUrl;
       };
-      ws.onclose = () => { wsReady = false; frameRequested = false; setTimeout(connectWS, 1500); };
-      ws.onerror = () => {};
-    })();
-
-    // ── HTTP batch fallback (used only when WS not yet connected) ────────────
-    let eventBatch = [], flushHandle = null;
-    function flushBatch() {
-      flushHandle = null;
-      if (!eventBatch.length) return;
-      const batch = eventBatch.splice(0);
-      fetch('/event', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(batch)
-      }).catch(() => {});
     }
+    connectWS();
 
-    // All events go through here — WS when ready, HTTP otherwise
-    function send(data) {
-      if (wsReady) {
-        ws.send(JSON.stringify(data));
-      } else {
-        eventBatch.push(data);
-        if (!flushHandle) flushHandle = setTimeout(flushBatch, 50);
-      }
+    // ── Send helpers ───────────────────────────────────────────────────────────
+    let eventBatch=[], flushHandle=null;
+    function flushBatch() { flushHandle=null; if(!eventBatch.length)return; const b=eventBatch.splice(0); fetch('/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).catch(()=>{}); }
+    function send(data) { if(wsReady){ws.send(JSON.stringify(data));}else{eventBatch.push(data);if(!flushHandle)flushHandle=setTimeout(flushBatch,50);} }
+
+    // ── Reset ──────────────────────────────────────────────────────────────────
+    function releaseAllButtons() {
+      heldButtons.forEach(b => send({type:'mouseup',x:0,y:0,button:b}));
+      heldButtons.clear();
+      ['Shift','Control','Alt','Meta'].forEach(k => send({type:'keyup',key:k,code:'',shift:false,meta:false,alt:false,ctrl:false}));
     }
+    function resetSession() { releaseAllButtons(); ws.close(); }
 
-    // Mouse move — throttled to ~30fps to avoid flooding
+    window.addEventListener('blur',  releaseAllButtons);
+    document.addEventListener('visibilitychange', () => { if(document.hidden) releaseAllButtons(); });
+
+    // ── Mouse ──────────────────────────────────────────────────────────────────
+    const heldButtons = new Set();
     let lastMove = 0;
     img.addEventListener('mousemove', e => {
-      const now = Date.now();
-      if (now - lastMove < 33) return;
-      lastMove = now;
-      const {x, y} = norm(e.clientX, e.clientY);
-      send({type: 'mousemove', x, y});
+      const now=Date.now(); if(now-lastMove<33)return; lastMove=now;
+      const {x,y}=norm(e.clientX,e.clientY); send({type:'mousemove',x,y});
     });
-
     img.addEventListener('mousedown', e => {
-      e.preventDefault();
-      const {x, y} = norm(e.clientX, e.clientY);
-      send({type: 'mousedown', x, y, button: e.button});
+      e.preventDefault(); heldButtons.add(e.button);
+      const {x,y}=norm(e.clientX,e.clientY); send({type:'mousedown',x,y,button:e.button});
     });
-
-    img.addEventListener('mouseup', e => {
-      const {x, y} = norm(e.clientX, e.clientY);
-      send({type: 'mouseup', x, y, button: e.button});
+    window.addEventListener('mouseup', e => {
+      heldButtons.delete(e.button);
+      const {x,y}=norm(e.clientX,e.clientY); send({type:'mouseup',x,y,button:e.button});
     });
-
     img.addEventListener('contextmenu', e => e.preventDefault());
     img.addEventListener('dragstart',   e => e.preventDefault());
+    img.addEventListener('wheel', e => { e.preventDefault(); send({type:'wheel',dx:e.deltaX,dy:e.deltaY}); }, {passive:false});
 
-    // Scroll
-    img.addEventListener('wheel', e => {
-      e.preventDefault();
-      send({type: 'wheel', dx: e.deltaX, dy: e.deltaY});
-    }, {passive: false});
-
-    // Quality selector — click cycles Low → Med → High → Low, sets user's max preference
-    const qualities = ['Low', 'Medium', 'High'];
-    const qualityLabels = ['Low', 'Med', 'High'];
-    let qualityIdx = 1;
-    // Adaptive quality: userQualityIdx = user's chosen max; qualityIdx may be auto-reduced.
-    let userQualityIdx = qualityIdx;
-    const AUTO_COOLDOWN = 8000;  // ms between auto quality changes
+    // ── Quality ────────────────────────────────────────────────────────────────
     function cycleQuality() {
-      userQualityIdx = (userQualityIdx + 1) % qualities.length;
-      qualityIdx = userQualityIdx;
-      document.getElementById('qualityBtn').textContent = qualityLabels[qualityIdx];
-      send({type: 'quality', quality: qualities[qualityIdx]});
-      lowFpsCount = 0; highFpsCount = 0; lastAutoChange = 0;
+      userQualityIdx=(userQualityIdx+1)%qualities.length; qualityIdx=userQualityIdx;
+      updateQualityBtn(); send({type:'quality',quality:qualities[qualityIdx]});
+      lowFpsCount=0; highFpsCount=0; lastAutoChange=0;
     }
 
-    // Keyboard — sent immediately with no batching delay
+    // ── Keyboard ───────────────────────────────────────────────────────────────
     document.addEventListener('click', () => document.body.focus());
-    document.addEventListener('keydown', e => {
-      e.preventDefault();
-      send({type: 'keydown', key: e.key, code: e.code,
-            shift: e.shiftKey, meta: e.metaKey, alt: e.altKey, ctrl: e.ctrlKey});
+    document.addEventListener('keydown', e => { e.preventDefault(); send({type:'keydown',key:e.key,code:e.code,shift:e.shiftKey,meta:e.metaKey,alt:e.altKey,ctrl:e.ctrlKey}); });
+    document.addEventListener('keyup',   e => { send({type:'keyup',key:e.key,code:e.code,shift:e.shiftKey,meta:e.metaKey,alt:e.altKey,ctrl:e.ctrlKey}); });
+  </script>
+</body>
+</html>
+"""
+
+private let h264HTMLTemplate = """
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tiny Viewer</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;background:#000;overflow:hidden;cursor:none}
+    canvas{width:100%;height:100%;object-fit:contain;display:block}
+    #toolbar{position:fixed;top:10px;right:10px;display:flex;gap:4px;z-index:10;opacity:0;transition:opacity .25s}
+    #toolbar.vis{opacity:1}
+    .tbtn{background:rgba(0,0,0,.65);color:#aaa;border:1px solid #444;border-radius:6px;padding:4px 9px;font-size:11px;font-family:-apple-system,sans-serif;cursor:pointer;transition:background .15s,color .15s}
+    .tbtn:hover{background:rgba(40,40,40,.9);color:#fff}
+    .tbtn.lit{background:#0a84ff;color:#fff;border-color:#0a84ff}
+    .tsep{width:1px;background:#444;margin:0 2px}
+    #status{position:fixed;bottom:8px;left:8px;z-index:20;display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+    #dbgPanel{display:none;background:rgba(0,0,0,.7);color:#0f0;font:11px/1.4 'SF Mono',monospace;padding:6px 8px;border-radius:6px;pointer-events:none;white-space:nowrap}
+    #dbgPanel.open{display:block}
+    #pill{display:flex;align-items:center;gap:5px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);border-radius:100px;padding:3px 8px;cursor:pointer;font:11px -apple-system,sans-serif;color:rgba(255,255,255,.7)}
+    #dot{width:6px;height:6px;border-radius:50%;background:#888;flex-shrink:0}
+    #dot.green{background:#30d158;box-shadow:0 0 4px #30d158}
+    #dot.orange{background:#ff9f0a;box-shadow:0 0 4px #ff9f0a}
+    #dot.red{background:#ff453a;box-shadow:0 0 4px #ff453a}
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="status">
+    <div id="dbgPanel"></div>
+    <div id="pill" onclick="toggleDbg()"><div id="dot"></div><span id="pillTxt">Connecting…</span></div>
+  </div>
+  <div id="toolbar">
+    <button class="tbtn lit" id="qualityBtn" onclick="cycleQuality()">Med</button>
+    <div class="tsep"></div>
+    <button class="tbtn" onclick="window.open('/terminal','_blank')">Terminal</button>
+    <button class="tbtn" onclick="resetSession()" title="Release stuck keys/mouse and reconnect">↺</button>
+  </div>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx    = canvas.getContext('2d');
+    const dot    = document.getElementById('dot');
+    const pillTxt = document.getElementById('pillTxt');
+    const dbgPanel = document.getElementById('dbgPanel');
+    let dbgOpen = false;
+    function toggleDbg() { dbgOpen=!dbgOpen; dbgPanel.className=dbgOpen?'open':''; }
+
+    const toolbar = document.getElementById('toolbar');
+    let hideTimer=null;
+    function showToolbar(){ toolbar.classList.add('vis'); clearTimeout(hideTimer); hideTimer=setTimeout(()=>toolbar.classList.remove('vis'),2500); }
+    document.addEventListener('mousemove', showToolbar);
+
+    // WebCodecs H.264 decoder
+    let decoder, pendingConfig=null, frameCount=0, fps=0, fpsTick=0, rttMs=0, frameKB=0;
+    setInterval(()=>{ fps=fpsTick; fpsTick=0; dbgPanel.textContent='#'+frameCount+'  '+fps+'fps  rtt:'+rttMs+'ms  '+frameKB+'KB'; }, 1000);
+
+    function initDecoder() {
+      if(decoder){ try{decoder.close();}catch(e){} }
+      decoder = new VideoDecoder({
+        output: frame => {
+          canvas.width=frame.displayWidth; canvas.height=frame.displayHeight;
+          ctx.drawImage(frame,0,0); frame.close(); frameCount++; fpsTick++;
+        },
+        error: e => { console.error('VideoDecoder',e); setTimeout(initDecoder,500); }
+      });
+      if(pendingConfig) decoder.configure(pendingConfig);
+    }
+
+    if(typeof VideoDecoder!=='undefined') initDecoder();
+    else { pillTxt.textContent='WebCodecs not supported'; dot.className='red'; }
+
+    // WebSocket
+    const wsProto=location.protocol==='https:'?'wss:':'ws:';
+    let ws, wsReady=false;
+    let sendBuf=[], sendTimer=null;
+    function flushSend(){ sendTimer=null; if(!sendBuf.length)return; const b=sendBuf.splice(0); fetch('/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).catch(()=>{}); }
+    function send(d){ if(wsReady){ws.send(JSON.stringify(d));}else{sendBuf.push(d);if(!sendTimer)sendTimer=setTimeout(flushSend,50);} }
+
+    function connectWS(){
+      ws=new WebSocket(wsProto+'//'+location.host+'/ws');
+      ws.binaryType='arraybuffer';
+      ws.onopen=()=>{ wsReady=true; dot.className='green'; pillTxt.textContent='Live (H.264)'; };
+      ws.onclose=()=>{ wsReady=false; dot.className='orange'; pillTxt.textContent='Reconnecting…'; setTimeout(connectWS,1500); };
+      ws.onerror=()=>{};
+      ws.onmessage=e=>{
+        if(typeof e.data==='string'){
+          try{
+            const msg=JSON.parse(e.data);
+            if(msg.type==='config' && typeof VideoDecoder!=='undefined'){
+              pendingConfig={codec:'avc1.'+msg.profileLevelId, optimizeForLatency:true};
+              initDecoder();
+            }
+          }catch(err){}
+          return;
+        }
+        const sentAt=ws._sentAt||Date.now();
+        rttMs=Date.now()-sentAt; frameKB=Math.round(e.data.byteLength/1024);
+        if(!decoder||decoder.state==='closed') return;
+        const view=new Uint8Array(e.data);
+        const isKey=(view[4]&0x1f)===5;
+        if(decoder.state==='unconfigured') return;
+        try{
+          ws._sentAt=Date.now();
+          decoder.decode(new EncodedVideoChunk({type:isKey?'key':'delta',timestamp:Date.now()*1000,data:e.data}));
+        }catch(err){}
+      };
+    }
+    connectWS();
+
+    function releaseAllButtons(){
+      heldButtons.forEach(b=>send({type:'mouseup',x:0,y:0,button:b}));
+      heldButtons.clear();
+      ['Shift','Control','Alt','Meta'].forEach(k=>send({type:'keyup',key:k,code:'',shift:false,meta:false,alt:false,ctrl:false}));
+    }
+    function resetSession(){ releaseAllButtons(); ws.close(); }
+    window.addEventListener('blur', releaseAllButtons);
+    document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAllButtons(); });
+
+    function norm(cx,cy){
+      const r=canvas.getBoundingClientRect();
+      return { x:Math.max(0,Math.min(1,(cx-r.left)/r.width)), y:Math.max(0,Math.min(1,(cy-r.top)/r.height)) };
+    }
+    const heldButtons=new Set();
+    let lastMove=0;
+    canvas.addEventListener('mousemove',e=>{ const now=Date.now(); if(now-lastMove<33)return; lastMove=now; const{x,y}=norm(e.clientX,e.clientY); send({type:'mousemove',x,y}); });
+    canvas.addEventListener('mousedown',e=>{ e.preventDefault(); heldButtons.add(e.button); const{x,y}=norm(e.clientX,e.clientY); send({type:'mousedown',x,y,button:e.button}); });
+    window.addEventListener('mouseup',e=>{ heldButtons.delete(e.button); const{x,y}=norm(e.clientX,e.clientY); send({type:'mouseup',x,y,button:e.button}); });
+    canvas.addEventListener('contextmenu',e=>e.preventDefault());
+    canvas.addEventListener('wheel',e=>{ e.preventDefault(); send({type:'wheel',dx:e.deltaX,dy:e.deltaY}); },{passive:false});
+
+    const qualities=['Low','Medium','High'],qualityLabels=['Low','Med','High'];
+    let qualityIdx=1,userQualityIdx=1;
+    function updateQualityBtn(){ document.getElementById('qualityBtn').textContent=qualityLabels[qualityIdx]+(qualityIdx<userQualityIdx?'↓':''); document.getElementById('qualityBtn').className='tbtn lit'; }
+    function cycleQuality(){ userQualityIdx=(userQualityIdx+1)%qualities.length; qualityIdx=userQualityIdx; updateQualityBtn(); send({type:'quality',quality:qualities[qualityIdx]}); }
+
+    document.addEventListener('click',()=>document.body.focus());
+    document.addEventListener('keydown',e=>{ e.preventDefault(); send({type:'keydown',key:e.key,code:e.code,shift:e.shiftKey,meta:e.metaKey,alt:e.altKey,ctrl:e.ctrlKey}); });
+    document.addEventListener('keyup',e=>{ send({type:'keyup',key:e.key,code:e.code,shift:e.shiftKey,meta:e.metaKey,alt:e.altKey,ctrl:e.ctrlKey}); });
+  </script>
+</body>
+</html>
+"""
+
+private let terminalHTML = """
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Terminal — Tiny Viewer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{width:100%;height:100%;background:#1a1a1a;overflow:hidden}
+    #term{width:100%;height:100%}
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script>
+    const term = new Terminal({ cursorBlink:true, fontSize:14, fontFamily:"'SF Mono',Menlo,monospace", theme:{background:'#1a1a1a'} });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('term'));
+    fitAddon.fit();
+
+    const wsProto = location.protocol==='https:'?'wss:':'ws:';
+    let ws, reconnectTimer=null;
+
+    function connect() {
+      ws = new WebSocket(wsProto+'//'+location.host+'/terminal-ws');
+      ws.binaryType = 'arraybuffer';
+      ws.onopen  = () => { term.write('\\r\\n\\x1b[32mConnected\\x1b[0m\\r\\n'); };
+      ws.onclose = () => { term.write('\\r\\n\\x1b[31mDisconnected — reconnecting…\\x1b[0m\\r\\n'); reconnectTimer=setTimeout(connect,2000); };
+      ws.onerror = () => {};
+      ws.onmessage = e => {
+        if (e.data instanceof ArrayBuffer) {
+          term.write(new Uint8Array(e.data));
+        }
+      };
+    }
+    connect();
+
+    term.onData(data => {
+      if (ws && ws.readyState===WebSocket.OPEN) ws.send(new TextEncoder().encode(data));
     });
-    document.addEventListener('keyup', e => {
-      send({type: 'keyup', key: e.key, code: e.code,
-            shift: e.shiftKey, meta: e.metaKey, alt: e.altKey, ctrl: e.ctrlKey});
-    });
+
+    function sendResize() {
+      fitAddon.fit();
+      if (ws && ws.readyState===WebSocket.OPEN) {
+        ws.send(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
+      }
+    }
+    window.addEventListener('resize', sendResize);
+    setTimeout(sendResize, 300);
   </script>
 </body>
 </html>
@@ -303,6 +484,11 @@ class MJPEGServer {
     /// One-time connect token validator. When set, direct URL access without a valid token returns 403.
     nonisolated(unsafe) var tokenValidator: ((String) async -> Bool)?
 
+    /// Connection mode — determines which viewer HTML is served at GET /.
+    nonisolated(unsafe) var connectionMode: ConnectionMode = .relay
+
+    nonisolated(unsafe) private var terminalSessions: [TerminalSession] = []
+
     private var listener: NWListener?
 
     nonisolated(unsafe) private var streamConnections: [NWConnection]          = []
@@ -363,6 +549,8 @@ class MJPEGServer {
             self?.latestFrame     = nil
             self?.latestImageData = nil
             self?.busyClients.removeAll()
+            self?.terminalSessions.forEach { $0.stop() }
+            self?.terminalSessions.removeAll()
             self?.onClientCountChanged?(0)
         }
     }
@@ -381,6 +569,22 @@ class MJPEGServer {
             case ("GET", "/ws"):
                 if self.isAuthorized(req.sessionToken) {
                     self.handleWebSocketUpgrade(connection, key: req.webSocketKey)
+                } else {
+                    self.send401(connection)
+                }
+
+            case ("GET", "/terminal"):
+                if let tok = req.connectToken {
+                    self.handleTokenAuth(connection, token: tok, redirectTo: "/terminal")
+                } else if self.isAuthorized(req.sessionToken) {
+                    self.send200(connection, html: terminalHTML)
+                } else {
+                    self.redirectToRoot(connection)
+                }
+
+            case ("GET", "/terminal-ws"):
+                if self.isAuthorized(req.sessionToken) {
+                    self.handleTerminalWSUpgrade(connection, key: req.webSocketKey)
                 } else {
                     self.send401(connection)
                 }
@@ -413,7 +617,8 @@ class MJPEGServer {
                 if let tok = req.connectToken {
                     self.handleTokenAuth(connection, token: tok)
                 } else if self.isAuthorized(req.sessionToken) {
-                    self.send200(connection, html: viewerHTML)
+                    let html = self.connectionMode == .direct ? h264HTMLTemplate : viewerHTML
+                    self.send200(connection, html: html)
                 } else if self.tokenValidator != nil {
                     // Token validation always required — reject direct access without token
                     self.send403(connection)
@@ -432,6 +637,12 @@ class MJPEGServer {
     // MARK: - Auth
 
     nonisolated private func isAuthorized(_ token: String?) -> Bool {
+        // When a tokenValidator is configured, a real session is always required —
+        // the empty-PIN shortcut would bypass Firebase auth entirely.
+        if tokenValidator != nil {
+            guard let token else { return false }
+            return validSessions.contains(token)
+        }
         guard !pin.isEmpty else { return true }
         guard let token else { return false }
         return validSessions.contains(token)
@@ -481,7 +692,7 @@ class MJPEGServer {
 
     // MARK: - Token Auth
 
-    nonisolated private func handleTokenAuth(_ conn: NWConnection, token: String) {
+    nonisolated private func handleTokenAuth(_ conn: NWConnection, token: String, redirectTo: String = "/") {
         guard let validator = tokenValidator else {
             // No validator configured — fall back to normal flow
             send200(conn, html: pinPageTemplate
@@ -498,7 +709,7 @@ class MJPEGServer {
                     self.queue.async { self.validSessions.insert(sessionTok) }
                     let response = [
                         "HTTP/1.1 302 Found",
-                        "Location: /",
+                        "Location: \(redirectTo)",
                         "Set-Cookie: session=\(sessionTok); Path=/; HttpOnly",
                         "Content-Length: 0",
                         "Connection: close",
@@ -555,6 +766,23 @@ class MJPEGServer {
                 self.wsVideoReady.insert(ObjectIdentifier(conn))
             }
             self.readWSFrame(conn, buffer: [])
+        })
+    }
+
+    nonisolated private func handleTerminalWSUpgrade(_ conn: NWConnection, key: String?) {
+        guard let key else { send400(conn); return }
+        let magic  = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+        let hash   = Insecure.SHA1.hash(data: Data((key + magic).utf8))
+        let accept = Data(hash).base64EncodedString()
+        let resp   = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
+        conn.send(content: resp.data(using: .utf8), completion: .contentProcessed { [weak self] error in
+            guard error == nil, let self else { conn.cancel(); return }
+            let session = TerminalSession(connection: conn)
+            self.queue.async { self.terminalSessions.append(session) }
+            session.onClose = { [weak self] in
+                self?.queue.async { self?.terminalSessions.removeAll { $0 === session } }
+            }
+            session.start()
         })
     }
 
@@ -724,6 +952,15 @@ class MJPEGServer {
             // WS video clients — pull model, only send if browser has requested a frame
             for conn in self.wsConnections where self.wsVideoReady.contains(ObjectIdentifier(conn)) {
                 self.sendWSVideoFrame(imageData, to: conn)
+            }
+        }
+    }
+
+    func broadcastH264Frame(_ annexB: Data, isKey: Bool) {
+        queue.async { [weak self] in
+            guard let self, !self.wsConnections.isEmpty else { return }
+            for conn in self.wsConnections where self.wsVideoReady.contains(ObjectIdentifier(conn)) {
+                self.sendWSVideoFrame(annexB, to: conn)
             }
         }
     }

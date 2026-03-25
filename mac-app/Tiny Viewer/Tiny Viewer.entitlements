@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Outbound TCP connections (Firebase, LemonSqueezy, Cloudflare tunnel) -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Inbound connections (NWListener on :8080) -->
+	<key>com.apple.security.network.server</key>
+	<true/>
+	<!-- Allow loading third-party frameworks (Firebase, Google Sign-In) that may
+	     not carry their own Hardened Runtime signature -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

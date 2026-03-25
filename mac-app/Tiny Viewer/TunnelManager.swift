@@ -31,6 +31,7 @@ class TunnelManager {
 
     private(set) var status: TunnelStatus = .stopped
     var onURLDiscovered: ((String) -> Void)?
+    var onTerminated: (() -> Void)?
 
     private var process: Process?
     private var buffer = ""
@@ -73,6 +74,7 @@ class TunnelManager {
             DispatchQueue.main.async {
                 guard let self, case .running = self.status else { return }
                 self.status = .stopped
+                self.onTerminated?()
             }
         }
 

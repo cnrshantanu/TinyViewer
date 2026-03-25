@@ -24,6 +24,13 @@ private func localIPAddress() -> String {
     return address
 }
 
+// MARK: - Connection mode
+
+enum ConnectionMode: String, CaseIterable {
+    case relay  = "Relay (Cloudflare)"
+    case direct = "Direct (LAN / H.264)"
+}
+
 // MARK: - App State
 
 @Observable
@@ -35,12 +42,15 @@ class AppState {
     var signInError:   String? = nil
 
     // Server
-    var isRunning      = false
-    var clientCount    = 0
-    var pin            = ""
-    var computerName   = "Mac"
+    var isRunning        = false
+    var clientCount      = 0
+    var pin              = ""
+    var computerName     = "Mac"
+    // Direct (H.264) mode is implemented but not exposed in the release UI.
+    // To enable it, add the Mode picker back to DashboardView.
+    private(set) var connectionMode = ConnectionMode.relay
     var accessibilityGranted = InputController.isAccessibilityEnabled
-    let localIP        = localIPAddress()
+    let localIP          = localIPAddress()
 
     private var permissionPollTask: Task<Void, Never>?
     private var sleepAssertionID: IOPMAssertionID = 0
@@ -50,6 +60,8 @@ class AppState {
     let server    = MJPEGServer()
     let tunnel    = TunnelManager()
     let firebase  = FirebaseClient()
+    // VideoEncoder is compiled but not wired up in the release build.
+    // Re-enable by restoring the Mode picker and direct-mode block in startServer().
 
     // MARK: - Auth
 
@@ -93,16 +105,33 @@ class AppState {
     // MARK: - Server lifecycle
 
     func startServer() {
-        server.pin = pin
+        // Clear any stale Firebase presence from a previous session immediately.
+        Task { await firebase.setOffline() }
+
+        server.pin            = pin
+        server.connectionMode = connectionMode
         server.tokenValidator = { [weak self] token in
             guard let self else { return false }
             return await self.firebase.validateConnectToken(token)
         }
-        let srv = server
+        server.onClientCountChanged = { [weak self] count in
+            DispatchQueue.main.async { self?.clientCount = count }
+        }
+
+        IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            "Tiny Viewer active session" as CFString,
+            &sleepAssertionID
+        )
+
+        server.start()
+
+        // Relay — MJPEG over Cloudflare tunnel
         var idleSkip = 0
+        let srv = server
         capturer.onFrame = { [weak srv] data in
             guard let srv else { return }
-            // Adaptive FPS: when idle >3s, pass only every 4th frame (~25%)
             if srv.isIdle {
                 idleSkip += 1
                 guard idleSkip % 4 == 0 else { return }
@@ -110,9 +139,6 @@ class AppState {
                 idleSkip = 0
             }
             srv.broadcastFrame(data)
-        }
-        server.onClientCountChanged = { [weak self] count in
-            DispatchQueue.main.async { self?.clientCount = count }
         }
         server.onQualityChange = { [weak self] quality in
             DispatchQueue.main.async {
@@ -126,20 +152,17 @@ class AppState {
                 }
             }
         }
-        IOPMAssertionCreateWithName(
-            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
-            IOPMAssertionLevel(kIOPMAssertionLevelOn),
-            "Tiny Viewer active session" as CFString,
-            &sleepAssertionID
-        )
         capturer.start()
-        server.start()
 
         tunnel.onURLDiscovered = { [weak self] url in
             guard let self else { return }
             let name = self.computerName
             Task { await self.firebase.setOnline(url: url, name: name) }
             self.firebase.startHeartbeat { [weak self] in self?.tunnel.status.url }
+        }
+        tunnel.onTerminated = { [weak self] in
+            guard let self else { return }
+            Task { await self.firebase.setOffline() }
         }
         tunnel.start()
 
@@ -187,6 +210,11 @@ class AppState {
 
     var publicURL: String? { tunnel.status.url }
 
+    var terminalURL: String? {
+        guard isRunning else { return nil }
+        return tunnel.status.url.map { $0 + "/terminal" }
+    }
+
     var statusText: String {
         guard isRunning else { return "Idle" }
         return clientCount == 0
@@ -203,14 +231,11 @@ class AppState {
 // MARK: - Root view
 
 struct ContentView: View {
-    @State private var state   = AppState()
-    private let license        = LicenseManager.shared
+    @State private var state = AppState()
 
     var body: some View {
         Group {
-            if case .trialExpired = license.state {
-                PaywallView()
-            } else if state.currentUser == nil {
+            if state.currentUser == nil {
                 SignInView(state: state)
             } else {
                 DashboardView(state: state)
@@ -218,7 +243,6 @@ struct ContentView: View {
         }
         .frame(width: 380)
         .onAppear {
-            license.initialize()
             state.restoreSessionIfPossible()
         }
     }
@@ -284,16 +308,9 @@ struct SignInView: View {
 
 struct DashboardView: View {
     let state: AppState
-    private let license = LicenseManager.shared
 
     var body: some View {
         VStack(spacing: 0) {
-
-            // ── Trial banner (shown only in last 30 days) ──────────────────
-            if let days = license.daysRemainingInTrial, days < 30 {
-                TrialBanner(daysRemaining: days)
-                Divider()
-            }
 
             // ── Top bar ────────────────────────────────────────────────────
             HStack {
@@ -346,12 +363,14 @@ struct DashboardView: View {
                         value: state.isRunning ? "\(state.localIP):8080" : "Stopped",
                         color: state.isRunning ? .green : .gray
                     )
-                    StatusRow(
-                        label: "Tunnel",
-                        value: state.tunnel.status.label,
-                        color: state.tunnel.status.isRunning ? .green :
-                               (state.isRunning ? .orange : .gray)
-                    )
+                    if state.connectionMode == .relay {
+                        StatusRow(
+                            label: "Tunnel",
+                            value: state.tunnel.status.label,
+                            color: state.tunnel.status.isRunning ? .green :
+                                   (state.isRunning ? .orange : .gray)
+                        )
+                    }
                     StatusRow(
                         label: "Firebase",
                         value: state.firebase.syncStatus.label,
@@ -403,29 +422,12 @@ struct DashboardView: View {
 
                 // Public URL
                 if let url = state.publicURL {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Public URL")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        HStack {
-                            Text(url)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 4)
-                            Button {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(url, forType: .string)
-                            } label: {
-                                Image(systemName: "doc.on.doc")
-                            }
-                            .buttonStyle(.plain)
-                            .help("Copy URL")
-                        }
-                        .padding(8)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                    }
+                    URLRow(label: "Stream URL", url: url)
+                }
+
+                // Terminal URL
+                if let url = state.terminalURL {
+                    URLRow(label: "Terminal URL", url: url)
                 }
 
                 // Client count
@@ -478,6 +480,39 @@ private struct StatusRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
+        }
+    }
+}
+
+// MARK: - URL row
+
+private struct URLRow: View {
+    let label: String
+    let url: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Text(url)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.plain)
+                .help("Copy URL")
+            }
+            .padding(8)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 }
