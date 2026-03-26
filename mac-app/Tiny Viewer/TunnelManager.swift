@@ -70,11 +70,18 @@ class TunnelManager {
             }
         }
 
-        p.terminationHandler = { [weak self] _ in
+        p.terminationHandler = { [weak self] proc in
             DispatchQueue.main.async {
-                guard let self, case .running = self.status else { return }
-                self.status = .stopped
-                self.onTerminated?()
+                guard let self else { return }
+                switch self.status {
+                case .running:
+                    self.status = .stopped
+                    self.onTerminated?()
+                case .starting:
+                    self.status = .failed("Tunnel exited (code \(proc.terminationStatus))")
+                default:
+                    break
+                }
             }
         }
 

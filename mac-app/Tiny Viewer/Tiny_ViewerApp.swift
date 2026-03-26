@@ -3,9 +3,11 @@ import SwiftUI
 @main
 struct Tiny_ViewerApp: App {
     var body: some Scene {
-        WindowGroup("Tiny Viewer") {
+        MenuBarExtra {
             ContentView()
+        } label: {
+            Image(systemName: "display")
         }
-        .windowResizability(.contentSize)
+        .menuBarExtraStyle(.window)
     }
 }
