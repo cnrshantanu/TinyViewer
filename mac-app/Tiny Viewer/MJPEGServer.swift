@@ -765,6 +765,8 @@ class MJPEGServer {
                 self.wsConnections.append(conn)
                 self.wsVideoReady.insert(ObjectIdentifier(conn))
             }
+            // Release any stuck mouse buttons / modifier keys from the previous session
+            InputController.shared.releaseAll()
             self.readWSFrame(conn, buffer: [])
         })
     }

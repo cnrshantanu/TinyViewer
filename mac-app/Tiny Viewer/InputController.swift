@@ -113,6 +113,20 @@ final class InputController {
         // keyup for printable chars is handled by the paired keydown above
     }
 
+    /// Releases all mouse buttons and modifier keys — call when a new WebSocket session
+    /// connects so any stuck state from the previous session is cleared on the Mac side.
+    nonisolated func releaseAll() {
+        let b  = CGDisplayBounds(CGMainDisplayID())
+        let pt = CGPoint(x: b.midX, y: b.midY)
+        post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,  mouseCursorPosition: pt, mouseButton: .left))
+        post(CGEvent(mouseEventSource: nil, mouseType: .rightMouseUp, mouseCursorPosition: pt, mouseButton: .right))
+        post(CGEvent(mouseEventSource: nil, mouseType: .otherMouseUp, mouseCursorPosition: pt, mouseButton: .center))
+        for keyCode: CGKeyCode in [56, 59, 58, 55] { // Shift, Control, Alt, Meta
+            let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false)
+            post(event)
+        }
+    }
+
     nonisolated private func post(_ event: CGEvent?) {
         event?.post(tap: .cghidEventTap)
     }

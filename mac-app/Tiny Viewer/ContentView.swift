@@ -322,6 +322,10 @@ struct DashboardView: View {
                     .buttonStyle(.plain)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 10)

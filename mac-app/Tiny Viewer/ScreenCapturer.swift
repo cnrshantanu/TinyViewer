@@ -27,7 +27,7 @@ enum StreamQuality: String, CaseIterable {
 // MARK: - Screen Capturer
 
 @Observable
-class ScreenCapturer: NSObject, SCStreamOutput {
+class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelegate {
 
     nonisolated(unsafe) var onFrame: ((Data) -> Void)?
 
@@ -36,11 +36,13 @@ class ScreenCapturer: NSObject, SCStreamOutput {
     var quality: StreamQuality = .medium
 
     private var stream: SCStream?
+    private var shouldCapture = false   // set by start()/stop() to guard auto-restart
     nonisolated let ciContext = CIContext()
 
     // MARK: - Public API
 
     func start() {
+        shouldCapture = true
         Task {
             do {
                 let content = try await SCShareableContent.current
@@ -63,7 +65,7 @@ class ScreenCapturer: NSObject, SCStreamOutput {
                     exceptingWindows: []
                 )
 
-                let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+                let stream = SCStream(filter: filter, configuration: config, delegate: self)
                 try stream.addStreamOutput(self, type: .screen,
                                            sampleHandlerQueue: .global(qos: .userInitiated))
                 try await stream.startCapture()
@@ -80,11 +82,31 @@ class ScreenCapturer: NSObject, SCStreamOutput {
     }
 
     func stop() {
+        shouldCapture = false
         let s = stream
         stream        = nil
         isCapturing   = false
         captureError  = nil
         Task { try? await s?.stopCapture() }
+    }
+
+    // MARK: - SCStreamDelegate
+
+    /// Called when the stream stops unexpectedly (e.g. screen lock, sleep, permission revoked).
+    /// Auto-restarts after a short delay so the stream recovers without user intervention.
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        print("[ScreenCapturer] Stream stopped unexpectedly: \(error)")
+        Task { @MainActor in
+            guard self.shouldCapture else { return }
+            self.isCapturing  = false
+            self.captureError = error.localizedDescription
+            // Wait briefly (unlock/wake may take a moment), then restart
+            try? await Task.sleep(for: .seconds(3))
+            guard self.shouldCapture, !self.isCapturing else { return }
+            print("[ScreenCapturer] Auto-restarting after error…")
+            self.captureError = nil
+            self.start()
+        }
     }
 
     // MARK: - SCStreamOutput
