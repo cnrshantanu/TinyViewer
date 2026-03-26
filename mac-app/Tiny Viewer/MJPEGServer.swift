@@ -779,9 +779,9 @@ class MJPEGServer {
         let resp   = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: \(accept)\r\n\r\n"
         conn.send(content: resp.data(using: .utf8), completion: .contentProcessed { [weak self] error in
             guard error == nil, let self else { conn.cancel(); return }
-            let session = TerminalSession(connection: conn)
+            let session = TerminalSession(conn: conn, queue: self.queue)
             self.queue.async { self.terminalSessions.append(session) }
-            session.onClose = { [weak self] in
+            session.onTerminated = { [weak self] in
                 self?.queue.async { self?.terminalSessions.removeAll { $0 === session } }
             }
             session.start()
