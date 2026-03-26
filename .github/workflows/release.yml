@@ -1,0 +1,178 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    name: Build, Sign, Notarize & Release
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Xcode version ─────────────────────────────────────────────────────
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      # ── Import Developer ID certificate ───────────────────────────────────
+      - name: Import signing certificate
+        env:
+          CERTIFICATE_P12_BASE64: ${{ secrets.CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD:   ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+
+          echo "$CERTIFICATE_P12_BASE64" | base64 --decode -o "$CERT_PATH"
+
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+
+      # ── Write Firebase credentials ────────────────────────────────────────
+      - name: Write FirebaseConfig.swift
+        env:
+          FIREBASE_PROJECT_ID:          ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_WEB_API_KEY:         ${{ secrets.FIREBASE_WEB_API_KEY }}
+          FIREBASE_GOOGLE_CLIENT_ID:    ${{ secrets.FIREBASE_GOOGLE_CLIENT_ID }}
+          FIREBASE_GOOGLE_CLIENT_SECRET: ${{ secrets.FIREBASE_GOOGLE_CLIENT_SECRET }}
+        run: |
+          cat > "mac-app/Tiny Viewer/FirebaseConfig.swift" <<EOF
+          import Foundation
+          enum FirebaseConfig {
+              static let projectID          = "$FIREBASE_PROJECT_ID"
+              static let webAPIKey          = "$FIREBASE_WEB_API_KEY"
+              static let googleClientID     = "$FIREBASE_GOOGLE_CLIENT_ID"
+              static let googleClientSecret = "$FIREBASE_GOOGLE_CLIENT_SECRET"
+              static var isConfigured: Bool { true }
+          }
+          EOF
+
+      # ── Build (archive) ───────────────────────────────────────────────────
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -project "mac-app/Tiny Viewer.xcodeproj" \
+            -scheme "Tiny Viewer" \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/TinyViewer.xcarchive" \
+            -destination "generic/platform=macOS" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --options=runtime" \
+            | xcpretty
+
+      # ── Export (Developer ID) ─────────────────────────────────────────────
+      - name: Export
+        run: |
+          cat > /tmp/export-options.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>              <string>developer-id</string>
+              <key>teamID</key>              <string>${{ secrets.APPLE_TEAM_ID }}</string>
+              <key>signingStyle</key>        <string>manual</string>
+              <key>signingCertificate</key>  <string>Developer ID Application</string>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/TinyViewer.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist /tmp/export-options.plist \
+            | xcpretty
+
+      # ── Notarize ──────────────────────────────────────────────────────────
+      - name: Notarize
+        env:
+          APPLE_ID:            ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD:  ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID:       ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP_PATH="$RUNNER_TEMP/export/Tiny Viewer.app"
+
+          # Zip for submission
+          ditto -c -k --keepParent "$APP_PATH" "$RUNNER_TEMP/TinyViewer-notarize.zip"
+
+          # Submit and wait
+          xcrun notarytool submit "$RUNNER_TEMP/TinyViewer-notarize.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --timeout 30m
+
+          # Staple ticket to app
+          xcrun stapler staple "$APP_PATH"
+
+      # ── Create DMG ────────────────────────────────────────────────────────
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP_PATH="$RUNNER_TEMP/export/Tiny Viewer.app"
+          DMG_PATH="$RUNNER_TEMP/TinyViewer-${VERSION}.dmg"
+
+          create-dmg \
+            --volname "Tiny Viewer" \
+            --volicon "$APP_PATH/Contents/Resources/AppIcon.icns" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "Tiny Viewer.app" 175 190 \
+            --hide-extension "Tiny Viewer.app" \
+            --app-drop-link 425 190 \
+            "$DMG_PATH" \
+            "$APP_PATH" \
+          || true   # create-dmg exits non-zero if no icon file — that's ok
+
+          # Fallback: plain DMG if create-dmg failed
+          if [ ! -f "$DMG_PATH" ]; then
+            hdiutil create -volname "Tiny Viewer" -srcfolder "$APP_PATH" \
+              -ov -format UDZO "$DMG_PATH"
+          fi
+
+          echo "DMG_PATH=$DMG_PATH" >> $GITHUB_ENV
+          echo "VERSION=$VERSION"   >> $GITHUB_ENV
+
+      # ── Sign DMG ──────────────────────────────────────────────────────────
+      - name: Sign DMG
+        run: |
+          codesign --sign "Developer ID Application" \
+            --timestamp \
+            "$DMG_PATH"
+
+      # ── Publish GitHub Release ────────────────────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Tiny Viewer ${{ env.VERSION }}"
+          body: |
+            ## Tiny Viewer ${{ env.VERSION }}
+
+            ### Installation
+            1. Download `TinyViewer-${{ env.VERSION }}.dmg`
+            2. Open the DMG and drag **Tiny Viewer** to Applications
+            3. Open the app and sign in with Google
+
+            ### Requirements
+            - macOS 13 Ventura or later
+            - [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) for Relay mode: `brew install cloudflared`
+          files: ${{ env.DMG_PATH }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
