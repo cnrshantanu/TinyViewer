@@ -82,6 +82,7 @@ final class InputController {
 
     nonisolated private func handleKey(_ json: [String: Any], keyDown: Bool) {
         let key    = json["key"]   as? String ?? ""
+        let code   = json["code"]  as? String ?? ""
         let shift  = json["shift"] as? Bool   ?? false
         let meta   = json["meta"]  as? Bool   ?? false
         let alt    = json["alt"]   as? Bool   ?? false
@@ -93,14 +94,14 @@ final class InputController {
         if alt   { flags.insert(.maskAlternate) }
         if ctrl  { flags.insert(.maskControl) }
 
-        if let keyCode = specialKeyCode(for: key) {
-            // Known special key → use virtual key code
+        // Prefer physical key code (e.code) so Cmd+C/V/Z/A etc. trigger the correct
+        // Mac shortcut. Fall back to special-key table, then unicode injection.
+        if let keyCode = physicalKeyCode(for: code) ?? specialKeyCode(for: key) {
             let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: keyDown)
             event?.flags = flags
             post(event)
         } else if keyDown, !key.isEmpty, key.count == 1 {
-            // Printable character → inject via Unicode string
-            // (virtual key code 0 is ignored when Unicode string is set)
+            // Printable character with no known key code → unicode injection
             let chars = Array(key.utf16)
             let dn = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)
             dn?.flags = flags
@@ -110,7 +111,26 @@ final class InputController {
             up?.flags = flags
             post(up)
         }
-        // keyup for printable chars is handled by the paired keydown above
+    }
+
+    // Maps browser KeyboardEvent.code → macOS virtual key code (US QWERTY layout).
+    // Using physical codes means Cmd+C/V/Z/A always hit the right Mac shortcut
+    // regardless of what character that key produces.
+    nonisolated private func physicalKeyCode(for code: String) -> CGKeyCode? {
+        let table: [String: CGKeyCode] = [
+            "KeyA": 0,  "KeyS": 1,  "KeyD": 2,  "KeyF": 3,  "KeyH": 4,
+            "KeyG": 5,  "KeyZ": 6,  "KeyX": 7,  "KeyC": 8,  "KeyV": 9,
+            "KeyB": 11, "KeyQ": 12, "KeyW": 13, "KeyE": 14, "KeyR": 15,
+            "KeyY": 16, "KeyT": 17, "KeyU": 32, "KeyI": 34, "KeyO": 31,
+            "KeyP": 35, "KeyL": 37, "KeyJ": 38, "KeyK": 40, "KeyN": 45,
+            "KeyM": 46,
+            "Digit1": 18, "Digit2": 19, "Digit3": 20, "Digit4": 21, "Digit5": 23,
+            "Digit6": 22, "Digit7": 26, "Digit8": 28, "Digit9": 25, "Digit0": 29,
+            "Minus": 27, "Equal": 24, "BracketLeft": 33, "BracketRight": 30,
+            "Backslash": 42, "Semicolon": 41, "Quote": 39, "Comma": 43,
+            "Period": 47, "Slash": 44, "Backquote": 50,
+        ]
+        return table[code]
     }
 
     /// Releases all mouse buttons and modifier keys — call when a new WebSocket session

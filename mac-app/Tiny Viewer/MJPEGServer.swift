@@ -70,6 +70,10 @@ private let viewerHTML = """
   <div id="toolbar">
     <button class="tbtn lit" id="qualityBtn" onclick="cycleQuality()">Med</button>
     <div class="tsep"></div>
+    <button class="tbtn" onclick="sendShortcut('Tab','Tab',false,true,false,false)" title="⌘Tab — switch apps on remote Mac">⌘⇥</button>
+    <button class="tbtn" onclick="sendShortcut(' ','Space',false,true,false,false)" title="⌘Space — Spotlight">⌘␣</button>
+    <button class="tbtn" onclick="sendPaste()" title="Paste local clipboard into remote Mac">Paste</button>
+    <div class="tsep"></div>
     <button class="tbtn" onclick="window.open('/terminal','_blank')">Terminal</button>
     <button class="tbtn" onclick="resetSession()" title="Release stuck keys/mouse and reconnect">↺</button>
   </div>
@@ -175,6 +179,24 @@ private let viewerHTML = """
     }
     function resetSession() { releaseAllButtons(); ws.close(); }
 
+    // Send a one-shot key combo (for OS-intercepted shortcuts like ⌘Tab, ⌘Space)
+    function sendShortcut(key, code, shift, meta, alt, ctrl) {
+      send({type:'keydown',key,code,shift,meta,alt,ctrl});
+      setTimeout(() => send({type:'keyup',key,code,shift,meta,alt,ctrl}), 80);
+    }
+
+    // Paste local clipboard text into the remote Mac character by character
+    async function sendPaste() {
+      let text = '';
+      try { text = await navigator.clipboard.readText(); }
+      catch(e) { text = prompt('Paste text to send:') || ''; }
+      if (!text) return;
+      for (const char of text) {
+        send({type:'keydown',key:char,code:'',shift:false,meta:false,alt:false,ctrl:false});
+        send({type:'keyup',  key:char,code:'',shift:false,meta:false,alt:false,ctrl:false});
+      }
+    }
+
     window.addEventListener('blur',  releaseAllButtons);
     document.addEventListener('visibilitychange', () => { if(document.hidden) releaseAllButtons(); });
 
@@ -247,6 +269,10 @@ private let h264HTMLTemplate = """
   </div>
   <div id="toolbar">
     <button class="tbtn lit" id="qualityBtn" onclick="cycleQuality()">Med</button>
+    <div class="tsep"></div>
+    <button class="tbtn" onclick="sendShortcut('Tab','Tab',false,true,false,false)" title="⌘Tab — switch apps on remote Mac">⌘⇥</button>
+    <button class="tbtn" onclick="sendShortcut(' ','Space',false,true,false,false)" title="⌘Space — Spotlight">⌘␣</button>
+    <button class="tbtn" onclick="sendPaste()" title="Paste local clipboard into remote Mac">Paste</button>
     <div class="tsep"></div>
     <button class="tbtn" onclick="window.open('/terminal','_blank')">Terminal</button>
     <button class="tbtn" onclick="resetSession()" title="Release stuck keys/mouse and reconnect">↺</button>
@@ -328,6 +354,20 @@ private let h264HTMLTemplate = """
       ['Shift','Control','Alt','Meta'].forEach(k=>send({type:'keyup',key:k,code:'',shift:false,meta:false,alt:false,ctrl:false}));
     }
     function resetSession(){ releaseAllButtons(); ws.close(); }
+    function sendShortcut(key,code,shift,meta,alt,ctrl){
+      send({type:'keydown',key,code,shift,meta,alt,ctrl});
+      setTimeout(()=>send({type:'keyup',key,code,shift,meta,alt,ctrl}),80);
+    }
+    async function sendPaste(){
+      let text='';
+      try{text=await navigator.clipboard.readText();}
+      catch(e){text=prompt('Paste text to send:')||'';}
+      if(!text)return;
+      for(const char of text){
+        send({type:'keydown',key:char,code:'',shift:false,meta:false,alt:false,ctrl:false});
+        send({type:'keyup',  key:char,code:'',shift:false,meta:false,alt:false,ctrl:false});
+      }
+    }
     window.addEventListener('blur', releaseAllButtons);
     document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAllButtons(); });
 
