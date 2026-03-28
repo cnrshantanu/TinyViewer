@@ -47,7 +47,7 @@ final class Tiny_ViewerTests: XCTestCase {
 
     // MARK: - TunnelManager URL extraction
 
-    func testExtractURLFromCloudflaredLog() {
+    @MainActor func testExtractURLFromCloudflaredLog() {
         let log = "2026-03-27T12:00:00Z INF |  https://safari-hollow-test.trycloudflare.com  |"
         XCTAssertEqual(
             TunnelManager().extractURL(from: log),
@@ -55,7 +55,7 @@ final class Tiny_ViewerTests: XCTestCase {
         )
     }
 
-    func testExtractURLReturnsNilWhenMissing() {
+    @MainActor func testExtractURLReturnsNilWhenMissing() {
         XCTAssertNil(TunnelManager().extractURL(from: "no url here"))
     }
 

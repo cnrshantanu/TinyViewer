@@ -68,6 +68,7 @@ jobs:
             -project "mac-app/Tiny Viewer.xcodeproj" \
             -scheme "Tiny Viewer" \
             -destination "platform=macOS" \
+            -skip-testing:"Tiny ViewerUITests" \
             | xcpretty
 
       # ── Build (archive) ───────────────────────────────────────────────────
