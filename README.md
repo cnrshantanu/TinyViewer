@@ -4,6 +4,11 @@ Stream your Mac screen to any browser — free, self-hosted, no subscriptions.
 
 **[tiny-viewer.web.app](https://tiny-viewer.web.app)**
 
+[![Release](https://github.com/cnrshantanu/TinyViewer/actions/workflows/release.yml/badge.svg)](https://github.com/cnrshantanu/TinyViewer/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/cnrshantanu/TinyViewer)](https://github.com/cnrshantanu/TinyViewer/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-13%2B-blue)](https://github.com/cnrshantanu/TinyViewer/releases/latest)
+[![License](https://img.shields.io/github/license/cnrshantanu/TinyViewer)](LICENSE)
+
 ---
 
 ## Quick start (using the hosted web app)
