@@ -1,36 +1,70 @@
-//
-//  Tiny_ViewerTests.swift
-//  Tiny ViewerTests
-//
-//  Created by Zakoi on 2/21/26.
-//
-
 import XCTest
 @testable import Tiny_Viewer
 
 final class Tiny_ViewerTests: XCTestCase {
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+    // MARK: - StreamQuality
+
+    func testStreamQualityPresets() {
+        XCTAssertEqual(StreamQuality.low.maxWidth,    640)
+        XCTAssertEqual(StreamQuality.medium.maxWidth, 960)
+        XCTAssertEqual(StreamQuality.high.maxWidth,   1920)
+        XCTAssertEqual(StreamQuality.low.fps,    10)
+        XCTAssertEqual(StreamQuality.medium.fps, 15)
+        XCTAssertEqual(StreamQuality.high.fps,   20)
+        XCTAssertLessThan(StreamQuality.low.jpegQuality,    StreamQuality.medium.jpegQuality)
+        XCTAssertLessThan(StreamQuality.medium.jpegQuality, StreamQuality.high.jpegQuality)
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    // MARK: - TunnelStatus
+
+    func testTunnelStatusURL() {
+        XCTAssertNil(TunnelStatus.stopped.url)
+        XCTAssertNil(TunnelStatus.starting.url)
+        XCTAssertNil(TunnelStatus.failed("err").url)
+        XCTAssertEqual(
+            TunnelStatus.running(url: "https://example.trycloudflare.com").url,
+            "https://example.trycloudflare.com"
+        )
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
+    func testTunnelStatusIsRunning() {
+        XCTAssertFalse(TunnelStatus.stopped.isRunning)
+        XCTAssertFalse(TunnelStatus.starting.isRunning)
+        XCTAssertFalse(TunnelStatus.failed("err").isRunning)
+        XCTAssertTrue(TunnelStatus.running(url: "https://x.trycloudflare.com").isRunning)
     }
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
-        }
+    func testTunnelStatusLabel() {
+        XCTAssertEqual(TunnelStatus.stopped.label,  "Stopped")
+        XCTAssertEqual(TunnelStatus.starting.label, "Starting…")
+        XCTAssertEqual(TunnelStatus.failed("oops").label, "Error: oops")
+        XCTAssertEqual(
+            TunnelStatus.running(url: "https://x.trycloudflare.com").label,
+            "https://x.trycloudflare.com"
+        )
     }
 
+    // MARK: - TunnelManager URL extraction
+
+    func testExtractURLFromCloudflaredLog() {
+        let log = "2026-03-27T12:00:00Z INF |  https://safari-hollow-test.trycloudflare.com  |"
+        XCTAssertEqual(
+            TunnelManager().extractURL(from: log),
+            "https://safari-hollow-test.trycloudflare.com"
+        )
+    }
+
+    func testExtractURLReturnsNilWhenMissing() {
+        XCTAssertNil(TunnelManager().extractURL(from: "no url here"))
+    }
+
+    // MARK: - LicenseManager
+
+    func testLicenseManagerAlwaysFree() {
+        let lm = LicenseManager.shared
+        XCTAssertTrue(lm.isAllowed)
+        XCTAssertNil(lm.daysRemainingInTrial)
+        XCTAssertEqual(lm.state, .licensed)
+    }
 }

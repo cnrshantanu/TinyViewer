@@ -61,6 +61,15 @@ jobs:
           }
           EOF
 
+      # ── Write FirebaseConfig for tests ───────────────────────────────────
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -project "mac-app/Tiny Viewer.xcodeproj" \
+            -scheme "Tiny Viewer" \
+            -destination "platform=macOS" \
+            | xcpretty
+
       # ── Build (archive) ───────────────────────────────────────────────────
       - name: Archive
         run: |

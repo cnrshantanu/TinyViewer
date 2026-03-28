@@ -123,7 +123,7 @@ class TunnelManager {
         return path.isEmpty ? nil : URL(fileURLWithPath: path)
     }
 
-    private func extractURL(from text: String) -> String? {
+    func extractURL(from text: String) -> String? {
         let pattern = "https://[a-zA-Z0-9][a-zA-Z0-9-]*\\.trycloudflare\\.com"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
