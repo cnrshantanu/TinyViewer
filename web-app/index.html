@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tiny Viewer — Remote Mac Access, Beautifully Simple</title>
   <meta name="description" content="Tiny Viewer streams your Mac screen to any browser. Free, self-hosted, no subscriptions.">
+  <meta property="og:title" content="Tiny Viewer — Your Mac, any browser, right now">
+  <meta property="og:description" content="Stream your Mac screen to any browser with full mouse and keyboard control. Free, self-hosted, open source.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://tiny-viewer.web.app">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Tiny Viewer — Your Mac, any browser, right now">
+  <meta name="twitter:description" content="Stream your Mac to any browser. Full mouse & keyboard control. Free forever, self-hosted, open source.">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
     :root {
@@ -40,24 +47,6 @@
     .hero-note { margin-top:1.2rem; font-size:.82rem; color:var(--muted) }
 
     .preview-wrap { margin-top:4.5rem; position:relative; width:100%; max-width:860px }
-    .preview-glow { position:absolute; inset:-60px; background:radial-gradient(ellipse 80% 60% at 50% 50%,rgba(79,142,247,.12),transparent); pointer-events:none }
-    .preview-frame { width:100%; background:#0d1017; border:1px solid var(--border); border-radius:20px; overflow:hidden; box-shadow:0 32px 100px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05) }
-    .preview-bar { background:#1a1d24; padding:.65rem 1rem; display:flex; align-items:center; gap:.5rem; border-bottom:1px solid var(--border) }
-    .cdot { width:10px; height:10px; border-radius:50% }
-    .preview-body { aspect-ratio:16/9; position:relative; overflow:hidden; background:linear-gradient(180deg,#0d1523 0%,#111827 100%) }
-    .fake-screen { position:absolute; inset:0; display:grid; grid-template-columns:180px 1fr }
-    .fake-sidebar { background:rgba(255,255,255,.02); border-right:1px solid var(--border); padding:1rem .75rem; display:flex; flex-direction:column; gap:.45rem }
-    .fake-row { height:8px; border-radius:4px; background:rgba(255,255,255,.06) }
-    .fake-row.hi { background:rgba(79,142,247,.35) }
-    .fake-main { padding:1.25rem; display:flex; flex-direction:column; gap:.7rem }
-    .fake-heading { height:10px; width:38%; border-radius:5px; background:rgba(255,255,255,.12) }
-    .fake-block { border-radius:8px; background:rgba(255,255,255,.04); border:1px solid var(--border) }
-    .fake-cards { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem }
-    .preview-pill { position:absolute; bottom:10px; left:10px; background:rgba(0,0,0,.65); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.1); border-radius:100px; padding:.25rem .7rem; font-size:.7rem; display:flex; align-items:center; gap:.35rem; color:rgba(255,255,255,.75) }
-    .live-dot { width:6px; height:6px; border-radius:50%; background:#4ade80; box-shadow:0 0 5px #4ade80; animation:blink 2s ease-in-out infinite }
-    .preview-toolbar { position:absolute; bottom:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.7); backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,.12); border-radius:10px; display:flex; overflow:hidden }
-    .ptbtn { padding:.35rem .8rem; font-size:.72rem; font-weight:600; color:rgba(255,255,255,.6) }
-    .ptbtn.on { background:var(--accent); color:#fff }
 
     section { padding:5rem max(1.5rem,calc(50% - 560px)) }
     .section-label { text-align:center; font-size:.78rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); margin-bottom:1rem }
@@ -111,10 +100,51 @@
     @media (max-width:640px) {
       .hero-actions { flex-direction:column; width:100%; max-width:320px }
       .btn-primary,.btn-ghost { justify-content:center }
-      .fake-screen { grid-template-columns:80px 1fr }
       footer { flex-direction:column; align-items:flex-start }
       .nav-link { display:none }
     }
+
+    /* ── Animated demo ──────────────────────────────────────────────────────── */
+    .demo-browser { width:100%; max-width:860px; margin-top:4.5rem; position:relative }
+    .demo-glow { position:absolute; inset:-60px; background:radial-gradient(ellipse 80% 60% at 50% 50%,rgba(79,142,247,.13),transparent); pointer-events:none }
+    .demo-frame { width:100%; background:#0d1017; border:1px solid var(--border); border-radius:20px; overflow:hidden; box-shadow:0 32px 100px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.05) }
+    .demo-chrome { background:#1a1d24; padding:.65rem 1rem; display:flex; align-items:center; gap:.5rem; border-bottom:1px solid var(--border) }
+    .demo-chrome .cdot { width:10px; height:10px; border-radius:50% }
+    .demo-urlbar { flex:1; height:22px; background:rgba(255,255,255,.06); border-radius:5px; margin:0 .75rem; display:flex; align-items:center; padding:0 .6rem; gap:.4rem }
+    .demo-urlbar svg { opacity:.4; flex-shrink:0 }
+    .demo-urlbar span { font-size:.65rem; color:rgba(255,255,255,.35); font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+    .demo-screen { aspect-ratio:16/9; position:relative; overflow:hidden; background:#1e1e1e; display:flex; flex-direction:column }
+    .mac-bar { height:22px; background:#323233; display:flex; align-items:center; justify-content:space-between; padding:0 12px; flex-shrink:0 }
+    .mac-bar-left { display:flex; align-items:center; gap:8px }
+    .mac-bar-ico { font-size:.55rem; color:rgba(255,255,255,.5) }
+    .mac-bar-time { font-size:.6rem; color:rgba(255,255,255,.7); font-weight:600 }
+    .editor-wrap { flex:1; display:flex; overflow:hidden }
+    .ed-sidebar { width:14%; background:#252526; border-right:1px solid rgba(255,255,255,.06); padding:.4rem .3rem; display:flex; flex-direction:column; gap:.2rem; overflow:hidden }
+    .ed-section { font-size:.45rem; color:rgba(255,255,255,.3); font-weight:700; letter-spacing:.06em; margin:.2rem 0 .1rem .2rem }
+    .ed-file { font-size:.48rem; color:rgba(255,255,255,.45); padding:.15rem .25rem; border-radius:2px; white-space:nowrap; overflow:hidden; cursor:default }
+    .ed-file.active { background:rgba(255,255,255,.08); color:rgba(255,255,255,.85) }
+    .ed-code { flex:1; padding:.5rem .6rem; overflow:hidden; font-family:'SF Mono',Menlo,monospace; font-size:.5rem; line-height:1.7; display:flex; flex-direction:column; gap:0 }
+    .cl { display:flex; gap:.4rem }
+    .ln { color:rgba(255,255,255,.2); min-width:.8rem; text-align:right; user-select:none }
+    .co { white-space:pre }
+    .kw { color:#c792ea } .fn { color:#82aaff } .st { color:#c3e88d } .cm { color:#546e7a; font-style:italic } .nm { color:#f78c6c } .op { color:#89ddff } .tx { color:#eeffff }
+    .term-wrap { height:28%; background:#0d0d0d; border-top:1px solid rgba(255,255,255,.08); display:flex; flex-direction:column; flex-shrink:0 }
+    .term-tab { height:22px; background:#1a1a1a; display:flex; align-items:center; padding:0 .6rem; gap:.5rem; border-bottom:1px solid rgba(255,255,255,.06) }
+    .term-tab span { font-size:.48rem; color:rgba(255,255,255,.5) }
+    .term-body { flex:1; padding:.3rem .5rem; font-family:'SF Mono',Menlo,monospace; font-size:.48rem; color:rgba(255,255,255,.75); overflow:hidden }
+    .term-line { display:flex; gap:.3rem; line-height:1.6 }
+    .term-prompt { color:#30d158 }
+    .term-cmd { color:#eeffff }
+    .term-out { color:rgba(255,255,255,.45) }
+    .term-cursor-blink { display:inline-block; width:1ch; height:.65em; background:#eeffff; animation:tblink .9s step-end infinite; vertical-align:middle }
+    @keyframes tblink { 0%,100%{opacity:1} 50%{opacity:0} }
+    /* TV overlay */
+    .tv-overlay { position:absolute; inset:0; pointer-events:none }
+    .tv-pill { position:absolute; bottom:8px; left:8px; background:rgba(0,0,0,.65); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.1); border-radius:100px; padding:.2rem .6rem; font-size:.6rem; display:flex; align-items:center; gap:.3rem; color:rgba(255,255,255,.75) }
+    .tv-dot { width:5px; height:5px; border-radius:50%; background:#4ade80; box-shadow:0 0 4px #4ade80; animation:blink 2s ease-in-out infinite }
+    .tv-bar { position:absolute; bottom:8px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.7); backdrop-filter:blur(12px); border:1px solid rgba(255,255,255,.12); border-radius:8px; display:flex; overflow:hidden }
+    .tvbtn { padding:.28rem .65rem; font-size:.6rem; font-weight:600; color:rgba(255,255,255,.55) }
+    .tvbtn.on { background:#0a84ff; color:#fff }
   </style>
 </head>
 <body>
@@ -133,7 +163,7 @@
 
 <section class="hero">
   <div class="badge"><div class="bdot"></div> Free &amp; Open Source</div>
-  <h1>Your Mac screen,<br>anywhere in the world.</h1>
+  <h1>Your Mac.<br>Any browser. Right now.</h1>
   <p class="hero-sub">Tiny Viewer streams your Mac to any browser with full mouse and keyboard control. No subscriptions, no middleman servers, no complexity.</p>
   <div class="hero-actions">
     <a href="https://github.com/cnrshantanu/TinyViewer/releases/latest" class="btn-primary" target="_blank" rel="noopener">
@@ -147,44 +177,96 @@
   </div>
   <p class="hero-note">macOS 13 Ventura or later &nbsp;·&nbsp; ~4 MB &nbsp;·&nbsp; Free forever</p>
 
-  <div class="preview-wrap">
-    <div class="preview-glow"></div>
-    <div class="preview-frame">
-      <div class="preview-bar">
+  <div class="demo-browser">
+    <div class="demo-glow"></div>
+    <div class="demo-frame">
+      <div class="demo-chrome">
         <div class="cdot" style="background:#ff5f57"></div>
         <div class="cdot" style="background:#febc2e"></div>
         <div class="cdot" style="background:#28c840"></div>
-        <div style="flex:1;height:7px;background:rgba(255,255,255,.06);border-radius:4px;margin-left:.5rem"></div>
+        <div class="demo-urlbar">
+          <svg width="8" height="9" viewBox="0 0 10 12" fill="none"><path d="M2 5V3.5a3 3 0 016 0V5M1 5h8a1 1 0 011 1v5a1 1 0 01-1 1H1a1 1 0 01-1-1V6a1 1 0 011-1z" stroke="currentColor" stroke-width="1.4"/></svg>
+          <span id="demoUrl">https://quiet-forest-mountain-lights.trycloudflare.com</span>
+        </div>
       </div>
-      <div class="preview-body">
-        <div class="fake-screen">
-          <div class="fake-sidebar">
-            <div class="fake-row hi" style="width:90%"></div>
-            <div class="fake-row" style="width:75%"></div>
-            <div class="fake-row" style="width:55%"></div>
-            <div class="fake-row" style="width:80%;margin-top:.4rem"></div>
-            <div class="fake-row" style="width:60%"></div>
+      <div class="demo-screen">
+        <div class="mac-bar">
+          <div class="mac-bar-left">
+            <span class="mac-bar-ico">&#63743;</span>
+            <span class="mac-bar-ico">File</span>
+            <span class="mac-bar-ico">Edit</span>
+            <span class="mac-bar-ico">View</span>
+            <span class="mac-bar-ico">Terminal</span>
           </div>
-          <div class="fake-main">
-            <div class="fake-heading"></div>
-            <div class="fake-block" style="height:75px"></div>
-            <div class="fake-cards">
-              <div class="fake-block" style="height:45px"></div>
-              <div class="fake-block" style="height:45px"></div>
-              <div class="fake-block" style="height:45px"></div>
-            </div>
+          <div class="mac-bar-time" id="demoTime">9:41 AM</div>
+        </div>
+        <div class="editor-wrap">
+          <div class="ed-sidebar">
+            <div class="ed-section">EXPLORER</div>
+            <div class="ed-file">📁 src</div>
+            <div class="ed-file active">　App.tsx</div>
+            <div class="ed-file">　index.ts</div>
+            <div class="ed-file">　api.ts</div>
+            <div class="ed-file">📄 package.json</div>
+            <div class="ed-file">📄 tsconfig.json</div>
+          </div>
+          <div class="ed-code">
+            <div class="cl"><span class="ln">1</span><span class="co"><span class="kw">import</span> <span class="tx">React, { useState, useEffect }</span> <span class="kw">from</span> <span class="st">'react'</span></span></div>
+            <div class="cl"><span class="ln">2</span><span class="co"><span class="kw">import</span> <span class="tx">{ fetchData }</span> <span class="kw">from</span> <span class="st">'./api'</span></span></div>
+            <div class="cl"><span class="ln">3</span><span class="co"></span></div>
+            <div class="cl"><span class="ln">4</span><span class="co"><span class="kw">export default function</span> <span class="fn">App</span><span class="op">()</span> <span class="op">{</span></span></div>
+            <div class="cl"><span class="ln">5</span><span class="co">  <span class="kw">const</span> [<span class="tx">data</span>, <span class="tx">setData</span>] <span class="op">=</span> <span class="fn">useState</span><span class="op">&lt;</span><span class="nm">string[]</span><span class="op">&gt;([])</span></span></div>
+            <div class="cl"><span class="ln">6</span><span class="co">  <span class="kw">const</span> [<span class="tx">loading</span>, <span class="tx">setLoading</span>] <span class="op">=</span> <span class="fn">useState</span><span class="op">(</span><span class="kw">true</span><span class="op">)</span></span></div>
+            <div class="cl"><span class="ln">7</span><span class="co"></span></div>
+            <div class="cl"><span class="ln">8</span><span class="co">  <span class="fn">useEffect</span><span class="op">(()</span> <span class="op">=&gt; {</span></span></div>
+            <div class="cl"><span class="ln">9</span><span class="co">    <span class="fn">fetchData</span><span class="op">().</span><span class="fn">then</span><span class="op">(</span><span class="tx">d</span> <span class="op">=&gt;</span> <span class="op">{</span></span></div>
+            <div class="cl"><span class="ln">10</span><span class="co">      <span class="fn">setData</span><span class="op">(</span><span class="tx">d</span><span class="op">)</span></span></div>
+            <div class="cl"><span class="ln">11</span><span class="co">      <span class="fn">setLoading</span><span class="op">(</span><span class="kw">false</span><span class="op">)</span></span></div>
           </div>
         </div>
-        <div class="preview-pill"><div class="live-dot"></div> Live &nbsp;·&nbsp; 60 fps</div>
-        <div class="preview-toolbar">
-          <div class="ptbtn on">High</div>
-          <div class="ptbtn">Terminal</div>
-          <div class="ptbtn">↺</div>
+        <div class="term-wrap">
+          <div class="term-tab">
+            <span>TERMINAL</span>
+            <span style="color:rgba(255,255,255,.25)">zsh</span>
+          </div>
+          <div class="term-body" id="termBody">
+            <div class="term-line"><span class="term-prompt">➜</span><span style="color:#82aaff">~/Projects/myapp</span><span class="term-cmd" id="termCmd"></span><span class="term-cursor-blink" id="termCursor"></span></div>
+            <div class="term-line term-out" id="termOut" style="margin-left:1.2rem"></div>
+          </div>
+        </div>
+        <div class="tv-overlay">
+          <div class="tv-pill"><div class="tv-dot"></div> Live&nbsp;·&nbsp;<span id="demoFps">24</span>fps</div>
+          <div class="tv-bar">
+            <div class="tvbtn on">High</div>
+            <div class="tvbtn">⌘⇥</div>
+            <div class="tvbtn">Paste</div>
+            <div class="tvbtn">Terminal</div>
+            <div class="tvbtn">↺</div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </section>
+
+<div style="border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:.9rem max(1.5rem,calc(50% - 560px));display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:2rem">
+  <a href="https://github.com/cnrshantanu/TinyViewer" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:.5rem;color:var(--muted);text-decoration:none;font-size:.82rem">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+    <span><strong id="ghStars">★</strong> Open source on GitHub</span>
+  </a>
+  <div style="display:flex;align-items:center;gap:.5rem;color:var(--muted);font-size:.82rem">
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 2L3 6v4c0 4.418 2.99 7.956 7 9 4.01-1.044 7-4.582 7-9V6l-7-4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    Your data never leaves your server
+  </div>
+  <div style="display:flex;align-items:center;gap:.5rem;color:var(--muted);font-size:.82rem">
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M10 2c0 0-4 4-4 8s4 8 4 8M10 2c0 0 4 4 4 8s-4 8-4 8M2 10h16" stroke="currentColor" stroke-width="1.5"/></svg>
+    Works in any browser
+  </div>
+  <div style="display:flex;align-items:center;gap:.5rem;color:var(--muted);font-size:.82rem">
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><rect x="2" y="3" width="16" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 17h6M10 14v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    macOS 13+ · Free forever
+  </div>
+</div>
 
 <section id="features">
   <p class="section-label">Features</p>
@@ -320,6 +402,68 @@
       status.textContent = err.code==='auth/popup-closed-by-user' ? '' : (err.message ?? 'Sign-in failed.');
     }
   };
+</script>
+
+<script>
+// Live clock
+(function() {
+  function tick() {
+    const t = new Date();
+    const h = t.getHours() % 12 || 12;
+    const m = String(t.getMinutes()).padStart(2,'0');
+    const ap = t.getHours() >= 12 ? 'PM' : 'AM';
+    const el = document.getElementById('demoTime');
+    if (el) el.textContent = h + ':' + m + ' ' + ap;
+  }
+  tick(); setInterval(tick, 30000);
+})();
+
+// FPS counter
+setInterval(() => {
+  const el = document.getElementById('demoFps');
+  if (el) el.textContent = (16 + Math.floor(Math.random() * 10));
+}, 1300);
+
+// GitHub stars
+fetch('https://api.github.com/repos/cnrshantanu/TinyViewer')
+  .then(r => r.json())
+  .then(d => {
+    const el = document.getElementById('ghStars');
+    if (el && d.stargazers_count !== undefined) el.textContent = '★ ' + d.stargazers_count;
+  }).catch(() => {});
+
+
+// Terminal animation
+(function() {
+  const cmdEl = document.getElementById('termCmd');
+  const outEl = document.getElementById('termOut');
+  const curEl = document.getElementById('termCursor');
+  if (!cmdEl) return;
+  const sessions = [
+    { cmd: 'git status', out: 'On branch main · nothing to commit', delay: 3500 },
+    { cmd: 'npm run dev', out: '▶  ready on http://localhost:3000', delay: 4000 },
+    { cmd: 'ls -la src/', out: 'App.tsx  api.ts  index.ts  styles/', delay: 3000 },
+    { cmd: 'cat .env', out: 'API_URL=https://api.example.com', delay: 3500 },
+  ];
+  let si = 0;
+  function runSession() {
+    const s = sessions[si % sessions.length];
+    cmdEl.textContent = '';
+    outEl.textContent = '';
+    let ci = 0;
+    const typing = setInterval(() => {
+      cmdEl.textContent += s.cmd[ci++];
+      if (ci >= s.cmd.length) {
+        clearInterval(typing);
+        setTimeout(() => {
+          outEl.textContent = s.out;
+          setTimeout(() => { si++; runSession(); }, s.delay);
+        }, 600);
+      }
+    }, 60);
+  }
+  setTimeout(runSession, 2000);
+})();
 </script>
 </body>
 </html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Viewer — Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+    :root {
+      --bg: #07080a; --surface: #111318; --border: rgba(255,255,255,.08);
+      --accent: #4f8ef7; --text: #f0f2f5; --muted: #8b909a; --green: #30d158;
+      --orange: #ff9f0a; --red: #ff453a;
+    }
+    body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; -webkit-font-smoothing:antialiased; min-height:100vh }
+
+    /* Auth screen */
+    #authScreen { display:flex; align-items:center; justify-content:center; min-height:100vh }
+    .auth-card { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:2.5rem; width:320px; text-align:center }
+    .auth-card h1 { font-size:1.3rem; font-weight:700; margin-bottom:.4rem }
+    .auth-card p { color:var(--muted); font-size:.9rem; margin-bottom:1.5rem }
+    .btn-signin { display:inline-flex; align-items:center; gap:.6rem; background:var(--accent); color:#fff; border:none; border-radius:10px; padding:.75rem 1.5rem; font-size:.95rem; font-weight:600; cursor:pointer; width:100%; justify-content:center }
+    .btn-signin:hover { opacity:.88 }
+    #authError { color:var(--red); font-size:.8rem; margin-top:.75rem }
+
+    /* Dashboard */
+    #dashboard { display:none; padding:2rem max(1.5rem,calc(50% - 640px)) }
+    header { display:flex; align-items:center; justify-content:space-between; margin-bottom:2rem }
+    header h1 { font-size:1.4rem; font-weight:700 }
+    .header-right { display:flex; align-items:center; gap:1rem }
+    .user-pill { display:flex; align-items:center; gap:.5rem; background:var(--surface); border:1px solid var(--border); border-radius:100px; padding:.35rem .75rem; font-size:.82rem; color:var(--muted) }
+    .btn-signout { background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:8px; padding:.35rem .75rem; font-size:.82rem; cursor:pointer }
+    .btn-signout:hover { color:var(--text) }
+    .btn-refresh { background:var(--accent); border:none; color:#fff; border-radius:8px; padding:.35rem .75rem; font-size:.82rem; cursor:pointer; font-weight:600 }
+
+    /* Stat cards */
+    .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; margin-bottom:2rem }
+    .stat { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem }
+    .stat-value { font-size:2rem; font-weight:800; line-height:1 }
+    .stat-label { font-size:.8rem; color:var(--muted); margin-top:.3rem }
+    .stat-value.green { color:var(--green) }
+    .stat-value.orange { color:var(--orange) }
+
+    /* Table */
+    .table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden }
+    .table-header { padding:1rem 1.25rem; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between }
+    .table-header h2 { font-size:.95rem; font-weight:700 }
+    table { width:100%; border-collapse:collapse }
+    th { padding:.65rem 1.25rem; text-align:left; font-size:.75rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; border-bottom:1px solid var(--border) }
+    td { padding:.75rem 1.25rem; font-size:.85rem; border-bottom:1px solid rgba(255,255,255,.04) }
+    tr:last-child td { border-bottom:none }
+    tr:hover td { background:rgba(255,255,255,.02) }
+    .status-dot { display:inline-flex; align-items:center; gap:.4rem }
+    .dot { width:7px; height:7px; border-radius:50%; flex-shrink:0 }
+    .dot.online  { background:var(--green);  box-shadow:0 0 5px var(--green) }
+    .dot.offline { background:var(--muted) }
+    .url-link { color:var(--accent); text-decoration:none; font-size:.8rem; font-family:monospace }
+    .url-link:hover { text-decoration:underline }
+    .empty { text-align:center; color:var(--muted); padding:3rem; font-size:.9rem }
+    .loading { text-align:center; color:var(--muted); padding:3rem }
+  </style>
+</head>
+<body>
+
+<!-- Auth screen -->
+<div id="authScreen">
+  <div class="auth-card">
+    <h1>🖥 Admin</h1>
+    <p>Sign in to access the Tiny Viewer admin dashboard.</p>
+    <button class="btn-signin" onclick="signIn()">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#fff" d="M9 3.48c1.69 0 2.83.73 3.48 1.34l2.54-2.48C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.96l2.91 2.26C4.6 5.05 6.62 3.48 9 3.48z"/><path fill="#fff" d="M17.64 9.2c0-.74-.06-1.28-.19-1.84H9v3.34h4.96c-.1.83-.64 2.08-1.84 2.92l2.84 2.2c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#fff" d="M3.88 10.78A5.54 5.54 0 0 1 3.58 9c0-.62.11-1.22.29-1.78L.96 4.96A9.008 9.008 0 0 0 0 9c0 1.45.35 2.82.96 4.04l2.92-2.26z"/><path fill="#fff" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.84-2.2c-.76.53-1.78.9-3.12.9-2.38 0-4.4-1.57-5.12-3.74L.95 13.04C2.44 15.98 5.48 18 9 18z"/></svg>
+      Sign in with Google
+    </button>
+    <p id="authError"></p>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+  <header>
+    <h1>Tiny Viewer — Admin</h1>
+    <div class="header-right">
+      <div class="user-pill" id="userEmail"></div>
+      <button class="btn-refresh" onclick="loadData()">Refresh</button>
+      <button class="btn-signout" onclick="signOut()">Sign out</button>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-value" id="statTotal">—</div><div class="stat-label">Total users</div></div>
+    <div class="stat"><div class="stat-value green" id="statOnline">—</div><div class="stat-label">Online now</div></div>
+    <div class="stat"><div class="stat-value orange" id="statDay">—</div><div class="stat-label">Active last 24h</div></div>
+    <div class="stat"><div class="stat-value" id="statWeek">—</div><div class="stat-label">Active last 7d</div></div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-header">
+      <h2>All Users</h2>
+    </div>
+    <div id="tableBody"><div class="loading">Loading…</div></div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp }                           from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, onAuthStateChanged }
+                                                     from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+  import { getFirestore, collection, getDocs }       from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  const ADMIN_EMAIL = 'shantanu.cmu@gmail.com';
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyCUePf4JLaONJg1NIIGGh-HHqHmKXPghJQ",
+    authDomain:        "tiny-viewer.firebaseapp.com",
+    projectId:         "tiny-viewer",
+    storageBucket:     "tiny-viewer.firebasestorage.app",
+    messagingSenderId: "212026968611",
+    appId:             "1:212026968611:web:ae8c4daeda85051df77f96"
+  };
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  // ── Auth state ─────────────────────────────────────────────────────────────
+  onAuthStateChanged(auth, user => {
+    if (user && user.email === ADMIN_EMAIL) {
+      document.getElementById('authScreen').style.display = 'none';
+      document.getElementById('dashboard').style.display  = 'block';
+      document.getElementById('userEmail').textContent    = user.email;
+      loadData();
+    } else if (user) {
+      // Signed in but not admin — sign out immediately
+      fbSignOut(auth);
+      document.getElementById('authError').textContent = 'Access denied: not an admin account.';
+    } else {
+      document.getElementById('authScreen').style.display = 'flex';
+      document.getElementById('dashboard').style.display  = 'none';
+    }
+  });
+
+  // ── Sign in / out ──────────────────────────────────────────────────────────
+  window.signIn = async () => {
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch(e) {
+      document.getElementById('authError').textContent = e.message;
+    }
+  };
+
+  window.signOut = () => fbSignOut(auth);
+
+  // ── Load Firestore data ────────────────────────────────────────────────────
+  window.loadData = async () => {
+    document.getElementById('tableBody').innerHTML = '<div class="loading">Loading…</div>';
+    try {
+      const snap = await getDocs(collection(db, 'tunnels'));
+      const users = [];
+      snap.forEach(doc => users.push({ uid: doc.id, ...doc.data() }));
+
+      // Stats
+      const now    = Date.now();
+      const day    = 24 * 60 * 60 * 1000;
+      const online = users.filter(u => u.status === 'online').length;
+      const active24h = users.filter(u => u.lastSeen && (now - new Date(u.lastSeen).getTime()) < day).length;
+      const active7d  = users.filter(u => u.lastSeen && (now - new Date(u.lastSeen).getTime()) < 7 * day).length;
+
+      document.getElementById('statTotal').textContent  = users.length;
+      document.getElementById('statOnline').textContent = online;
+      document.getElementById('statDay').textContent    = active24h;
+      document.getElementById('statWeek').textContent   = active7d;
+
+      // Sort: online first, then by lastSeen desc
+      users.sort((a, b) => {
+        if (a.status === 'online' && b.status !== 'online') return -1;
+        if (b.status === 'online' && a.status !== 'online') return  1;
+        return new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0);
+      });
+
+      if (users.length === 0) {
+        document.getElementById('tableBody').innerHTML = '<div class="empty">No users yet.</div>';
+        return;
+      }
+
+      const rows = users.map(u => {
+        const isOnline = u.status === 'online';
+        const lastSeen = u.lastSeen ? timeAgo(new Date(u.lastSeen)) : 'Never';
+        return `<tr>
+          <td><span class="status-dot"><span class="dot ${isOnline ? 'online' : 'offline'}"></span>${isOnline ? 'Online' : 'Offline'}</span></td>
+          <td>${u.name || '—'}</td>
+          <td style="font-family:monospace;font-size:.78rem;color:var(--muted)">${u.uid}</td>
+          <td>${lastSeen}</td>
+        </tr>`;
+      }).join('');
+
+      document.getElementById('tableBody').innerHTML = `
+        <table>
+          <thead><tr>
+            <th>Status</th><th>Computer</th><th>User ID</th><th>Last Seen</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    } catch(e) {
+      document.getElementById('tableBody').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    }
+  };
+
+  function timeAgo(date) {
+    const s = Math.floor((Date.now() - date) / 1000);
+    if (s < 60)   return 'Just now';
+    if (s < 3600)  return Math.floor(s/60) + 'm ago';
+    if (s < 86400) return Math.floor(s/3600) + 'h ago';
+    return Math.floor(s/86400) + 'd ago';
+  }
+</script>
+</body>
+</html>

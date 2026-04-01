@@ -8,7 +8,8 @@
       ".gitignore"
     ],
     "rewrites": [
-      { "source": "/app",  "destination": "/app.html" },
+      { "source": "/app",   "destination": "/app.html" },
+      { "source": "/admin", "destination": "/admin.html" },
       { "source": "**",    "destination": "/index.html" }
     ],
     "headers": [

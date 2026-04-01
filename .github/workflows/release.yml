@@ -172,6 +172,7 @@ jobs:
 
       # ── Publish GitHub Release ────────────────────────────────────────────
       - name: Create GitHub Release
+        id: release
         uses: softprops/action-gh-release@v2
         with:
           name: "Tiny Viewer ${{ env.VERSION }}"
@@ -189,3 +190,15 @@ jobs:
           files: ${{ env.DMG_PATH }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+      # ── Remove auto-generated source archives ─────────────────────────────
+      - name: Delete source code archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_ID="${{ steps.release.outputs.id }}"
+          REPO="${{ github.repository }}"
+          # Fetch all assets and delete the two auto-generated source archives
+          gh api "repos/$REPO/releases/$RELEASE_ID/assets" \
+            --jq '.[] | select(.name | test("^Source code\\.(zip|tar\\.gz)$")) | .id' \
+            | xargs -I{} gh api --method DELETE "repos/$REPO/releases/assets/{}"
