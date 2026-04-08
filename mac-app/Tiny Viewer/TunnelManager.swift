@@ -35,6 +35,7 @@ class TunnelManager {
 
     private var process: Process?
     private var buffer = ""
+    private var healthCheckTask: Task<Void, Never>?
 
     // MARK: - Lifecycle
 
@@ -66,13 +67,17 @@ class TunnelManager {
                    !self.status.isRunning {
                     self.status = .running(url: url)
                     self.onURLDiscovered?(url)
+                    self.startHealthCheck(url: url)
                 }
             }
         }
 
-        p.terminationHandler = { [weak self] proc in
+        // Guard against the old process's termination handler affecting a
+        // newly-started session (e.g. during a restart while the old process
+        // is still winding down).
+        p.terminationHandler = { [weak self, weak p] proc in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, self.process === p else { return }
                 switch self.status {
                 case .running:
                     self.status = .stopped
@@ -94,10 +99,63 @@ class TunnelManager {
     }
 
     func stop() {
+        stopHealthCheck()
         process?.terminate()
         process = nil
         buffer  = ""
         status  = .stopped
+    }
+
+    /// Stops then restarts the tunnel after a short delay.
+    /// Does not call `onTerminated` — callers that need that signal should
+    /// observe `status` changes directly.
+    func restart() {
+        print("[TunnelManager] Restarting tunnel…")
+        stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.start()
+        }
+    }
+
+    // MARK: - Health check
+
+    private func startHealthCheck(url: String) {
+        stopHealthCheck()
+        healthCheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                // Check every 2 minutes
+                try? await Task.sleep(for: .seconds(120))
+                guard !Task.isCancelled, let self else { break }
+
+                let alive = await self.checkTunnelAlive(url: url)
+                if !alive {
+                    print("[TunnelManager] Health check failed for \(url) — restarting")
+                    await MainActor.run { self.restart() }
+                    break // restart() will start a fresh health check via start()
+                }
+            }
+        }
+    }
+
+    private func stopHealthCheck() {
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
+    }
+
+    private func checkTunnelAlive(url: String) async -> Bool {
+        guard let reqURL = URL(string: url) else { return false }
+        var request = URLRequest(url: reqURL, timeoutInterval: 10)
+        request.httpMethod = "HEAD"
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            // 2xx/4xx = tunnel is alive (4xx is expected when PIN is required)
+            // 5xx (502/503/504) = Cloudflare couldn't reach the origin → tunnel dead
+            return http.statusCode < 500
+        } catch {
+            // Network/connection error — treat as dead
+            return false
+        }
     }
 
     // MARK: - Helpers
